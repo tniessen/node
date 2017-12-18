@@ -3023,7 +3023,8 @@ void CipherBase::New(const FunctionCallbackInfo<Value>& args) {
 
 void CipherBase::Init(const char* cipher_type,
                       const char* key_buf,
-                      int key_buf_len) {
+                      int key_buf_len,
+                      int auth_tag_len) {
   HandleScope scope(env()->isolate());
 
 #ifdef NODE_FIPS_MODE
@@ -3068,7 +3069,37 @@ void CipherBase::Init(const char* cipher_type,
   if (mode == EVP_CIPH_WRAP_MODE)
     EVP_CIPHER_CTX_set_flags(ctx_, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
 
+  // TODO(tniessen) Use EVP_CTRL_AEAD_SET_IVLEN when migrating to OpenSSL 1.1.0
+  if (IsAuthenticatedMode() &&
+      !EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_GCM_SET_IVLEN,
+                           EVP_CIPHER_iv_length(cipher), nullptr)) {
+    EVP_CIPHER_CTX_free(ctx_);
+    ctx_ = nullptr;
+    return env()->ThrowError("Invalid IV length");
+  }
+
   CHECK_EQ(1, EVP_CIPHER_CTX_set_key_length(ctx_, key_len));
+
+  if (mode == EVP_CIPH_CCM_MODE) {
+    if (auth_tag_len < 0) {
+      char msg[128];
+      snprintf(msg, sizeof(msg), "authTagLength required for %s", cipher_type);
+      Local<String> message =
+          String::NewFromUtf8(env()->isolate(), msg, v8::NewStringType::kNormal)
+          .ToLocalChecked();
+      Local<Value> exception = Exception::Error(message);
+      env()->isolate()->ThrowException(exception);
+      return;
+    }
+
+    if (!EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_CCM_SET_TAG, auth_tag_len,
+                             nullptr)) {
+      EVP_CIPHER_CTX_free(ctx_);
+      ctx_ = nullptr;
+      return env()->ThrowError("Invalid authentication tag length");
+    }
+    auth_tag_len_ = auth_tag_len;
+  }
 
   EVP_CipherInit_ex(ctx_,
                     nullptr,
@@ -3083,12 +3114,17 @@ void CipherBase::Init(const FunctionCallbackInfo<Value>& args) {
   CipherBase* cipher;
   ASSIGN_OR_RETURN_UNWRAP(&cipher, args.Holder());
 
-  CHECK_GE(args.Length(), 2);
+  CHECK_GE(args.Length(), 3);
 
   const node::Utf8Value cipher_type(args.GetIsolate(), args[0]);
   const char* key_buf = Buffer::Data(args[1]);
   ssize_t key_buf_len = Buffer::Length(args[1]);
-  cipher->Init(*cipher_type, key_buf, key_buf_len);
+  CHECK(args[2]->IsInt32());
+  // Don't assign to cipher->auth_tag_len_ directly; the value might not
+  // represent a valid length at this point.
+  int auth_tag_len = args[2]->Int32Value();
+
+  cipher->Init(*cipher_type, key_buf, key_buf_len, auth_tag_len);
 }
 
 
@@ -3096,7 +3132,8 @@ void CipherBase::InitIv(const char* cipher_type,
                         const char* key,
                         int key_len,
                         const char* iv,
-                        int iv_len) {
+                        int iv_len,
+                        int auth_tag_len) {
   HandleScope scope(env()->isolate());
 
   const EVP_CIPHER* const cipher = EVP_get_cipherbyname(cipher_type);
@@ -3107,6 +3144,7 @@ void CipherBase::InitIv(const char* cipher_type,
   const int expected_iv_len = EVP_CIPHER_iv_length(cipher);
   const int mode = EVP_CIPHER_mode(cipher);
   const bool is_gcm_mode = (EVP_CIPH_GCM_MODE == mode);
+  const bool is_ccm_mode = (EVP_CIPH_CCM_MODE == mode);
   const bool has_iv = iv_len >= 0;
 
   // Throw if no IV was passed and the cipher requires an IV
@@ -3117,7 +3155,7 @@ void CipherBase::InitIv(const char* cipher_type,
   }
 
   // Throw if an IV was passed which does not match the cipher's fixed IV length
-  if (is_gcm_mode == false && has_iv && iv_len != expected_iv_len) {
+  if (!is_gcm_mode && !is_ccm_mode && has_iv && iv_len != expected_iv_len) {
     return env()->ThrowError("Invalid IV length");
   }
 
@@ -3129,13 +3167,39 @@ void CipherBase::InitIv(const char* cipher_type,
   const bool encrypt = (kind_ == kCipher);
   EVP_CipherInit_ex(ctx_, cipher, nullptr, nullptr, nullptr, encrypt);
 
-  if (is_gcm_mode) {
+  if (is_gcm_mode || is_ccm_mode) {
     CHECK(has_iv);
+    // TODO(tniessen) Use EVP_CTRL_AEAD_SET_IVLEN when migrating to
+    // OpenSSL 1.1.0
     if (!EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_GCM_SET_IVLEN, iv_len, nullptr)) {
       EVP_CIPHER_CTX_free(ctx_);
       ctx_ = nullptr;
       return env()->ThrowError("Invalid IV length");
     }
+  }
+
+  if (is_ccm_mode) {
+    if (auth_tag_len < 0) {
+      char msg[128];
+      snprintf(msg, sizeof(msg), "authTagLength required for %s", cipher_type);
+      Local<String> message =
+          String::NewFromUtf8(env()->isolate(), msg, v8::NewStringType::kNormal)
+          .ToLocalChecked();
+      Local<Value> exception = Exception::Error(message);
+      env()->isolate()->ThrowException(exception);
+      return;
+    }
+
+    if (!EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_CCM_SET_TAG, auth_tag_len,
+                             nullptr)) {
+      EVP_CIPHER_CTX_free(ctx_);
+      ctx_ = nullptr;
+      return env()->ThrowError("Invalid authentication tag length");
+    }
+
+    // When decrypting in CCM mode, this field will be set in setAuthTag().
+    if (encrypt)
+      auth_tag_len_ = auth_tag_len;
   }
 
   if (!EVP_CIPHER_CTX_set_key_length(ctx_, key_len)) {
@@ -3158,7 +3222,7 @@ void CipherBase::InitIv(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&cipher, args.Holder());
   Environment* env = cipher->env();
 
-  CHECK_GE(args.Length(), 3);
+  CHECK_GE(args.Length(), 4);
 
   const node::Utf8Value cipher_type(env->isolate(), args[0]);
   ssize_t key_len = Buffer::Length(args[1]);
@@ -3172,7 +3236,12 @@ void CipherBase::InitIv(const FunctionCallbackInfo<Value>& args) {
     iv_buf = Buffer::Data(args[2]);
     iv_len = Buffer::Length(args[2]);
   }
-  cipher->InitIv(*cipher_type, key_buf, key_len, iv_buf, iv_len);
+  CHECK(args[3]->IsInt32());
+  // Don't assign to cipher->auth_tag_len_ directly; the value might not
+  // represent a valid length at this point.
+  int auth_tag_len = args[3]->Int32Value();
+
+  cipher->InitIv(*cipher_type, key_buf, key_len, iv_buf, iv_len, auth_tag_len);
 }
 
 
@@ -3181,7 +3250,7 @@ bool CipherBase::IsAuthenticatedMode() const {
   CHECK_NE(ctx_, nullptr);
   const EVP_CIPHER* const cipher = EVP_CIPHER_CTX_cipher(ctx_);
   int mode = EVP_CIPHER_mode(cipher);
-  return mode == EVP_CIPH_GCM_MODE;
+  return mode == EVP_CIPH_GCM_MODE || mode == EVP_CIPH_CCM_MODE;
 }
 
 
@@ -3216,12 +3285,15 @@ void CipherBase::SetAuthTag(const FunctionCallbackInfo<Value>& args) {
 
   // Restrict GCM tag lengths according to NIST 800-38d, page 9.
   unsigned int tag_len = Buffer::Length(args[0]);
-  if (tag_len > 16 || (tag_len < 12 && tag_len != 8 && tag_len != 4)) {
-    char msg[125];
-    snprintf(msg, sizeof(msg),
-             "Permitting authentication tag lengths of %u bytes is deprecated. "
-             "Valid GCM tag lengths are 4, 8, 12, 13, 14, 15, 16.", tag_len);
-    ProcessEmitDeprecationWarning(cipher->env(), msg, "DEP0090");
+  int mode = EVP_CIPHER_mode(EVP_CIPHER_CTX_cipher(cipher->ctx_));
+  if (mode == EVP_CIPH_GCM_MODE) {
+    if (tag_len > 16 || (tag_len < 12 && tag_len != 8 && tag_len != 4)) {
+      char msg[125];
+      snprintf(msg, sizeof(msg),
+          "Permitting authentication tag lengths of %u bytes is deprecated. "
+          "Valid GCM tag lengths are 4, 8, 12, 13, 14, 15, 16.", tag_len);
+      ProcessEmitDeprecationWarning(cipher->env(), msg, "DEP0090");
+    }
   }
 
   // Note: we don't use std::max() here to work around a header conflict.
@@ -3234,18 +3306,42 @@ void CipherBase::SetAuthTag(const FunctionCallbackInfo<Value>& args) {
 }
 
 
-bool CipherBase::SetAAD(const char* data, unsigned int len) {
+bool CipherBase::SetAAD(const char* data, unsigned int len, int plaintext_len) {
   if (ctx_ == nullptr || !IsAuthenticatedMode())
     return false;
+
   int outlen;
-  if (!EVP_CipherUpdate(ctx_,
-                        nullptr,
-                        &outlen,
-                        reinterpret_cast<const unsigned char*>(data),
-                        len)) {
-    return false;
+  const EVP_CIPHER* const cipher = EVP_CIPHER_CTX_cipher(ctx_);
+  int mode = EVP_CIPHER_mode(cipher);
+
+  // When in CCM mode, we need to set the authentication tag and the plaintext
+  // length in advance.
+  if (mode == EVP_CIPH_CCM_MODE) {
+    if (plaintext_len < 0) {
+      env()->ThrowError("plaintextLength required for CCM mode with AAD");
+      return true;
+    }
+
+    if (kind_ == kDecipher && !auth_tag_set_  && auth_tag_len_ > 0) {
+      if (!EVP_CIPHER_CTX_ctrl(ctx_,
+                               EVP_CTRL_CCM_SET_TAG,
+                               auth_tag_len_,
+                               reinterpret_cast<unsigned char*>(auth_tag_))) {
+        return false;
+      }
+      auth_tag_set_ = true;
+    }
+
+    // Specify the plaintext length.
+    if (!EVP_CipherUpdate(ctx_, nullptr, &outlen, nullptr, plaintext_len))
+      return false;
   }
-  return true;
+
+  return 1 == EVP_CipherUpdate(ctx_,
+                               nullptr,
+                               &outlen,
+                               reinterpret_cast<const unsigned char*>(data),
+                               len);
 }
 
 
@@ -3253,7 +3349,11 @@ void CipherBase::SetAAD(const FunctionCallbackInfo<Value>& args) {
   CipherBase* cipher;
   ASSIGN_OR_RETURN_UNWRAP(&cipher, args.Holder());
 
-  if (!cipher->SetAAD(Buffer::Data(args[0]), Buffer::Length(args[0])))
+  CHECK_EQ(args.Length(), 2);
+  CHECK(args[1]->IsInt32());
+  int pt_len = args[1]->Int32Value();
+
+  if (!cipher->SetAAD(Buffer::Data(args[0]), Buffer::Length(args[0]), pt_len))
     args.GetReturnValue().Set(false);  // Report invalid state failure
 }
 
@@ -3266,21 +3366,31 @@ bool CipherBase::Update(const char* data,
     return 0;
 
   // on first update:
-  if (kind_ == kDecipher && IsAuthenticatedMode() && auth_tag_len_ > 0) {
+  if (kind_ == kDecipher && IsAuthenticatedMode() && auth_tag_len_ > 0 &&
+      !auth_tag_set_) {
     EVP_CIPHER_CTX_ctrl(ctx_,
                         EVP_CTRL_GCM_SET_TAG,
                         auth_tag_len_,
                         reinterpret_cast<unsigned char*>(auth_tag_));
-    auth_tag_len_ = 0;
+    auth_tag_set_ = true;
   }
 
   *out_len = len + EVP_CIPHER_CTX_block_size(ctx_);
   *out = Malloc<unsigned char>(static_cast<size_t>(*out_len));
-  return EVP_CipherUpdate(ctx_,
-                          *out,
-                          out_len,
-                          reinterpret_cast<const unsigned char*>(data),
-                          len);
+  int r = EVP_CipherUpdate(ctx_,
+                           *out,
+                           out_len,
+                           reinterpret_cast<const unsigned char*>(data),
+                           len);
+
+  // When in CCM mode, EVP_CipherUpdate will fail if the authentication tag is
+  // invalid. In that case, remember the error and throw in final().
+  int mode = EVP_CIPHER_mode(EVP_CIPHER_CTX_cipher(ctx_));
+  if (!r && kind_ == kDecipher && mode == EVP_CIPH_CCM_MODE) {
+    pending_auth_failed_ = true;
+    return 1;
+  }
+  return r;
 }
 
 
@@ -3341,12 +3451,22 @@ bool CipherBase::Final(unsigned char** out, int *out_len) {
   if (ctx_ == nullptr)
     return false;
 
+  int mode = EVP_CIPHER_mode(EVP_CIPHER_CTX_cipher(ctx_));
+
   *out = Malloc<unsigned char>(
       static_cast<size_t>(EVP_CIPHER_CTX_block_size(ctx_)));
-  int r = EVP_CipherFinal_ex(ctx_, *out, out_len);
+
+  // In CCM mode, final() only checks whether authentication failed in update().
+  // EVP_CipherFinal_ex must not be called and will fail.
+  int r = mode == EVP_CIPH_CCM_MODE ? !pending_auth_failed_ :
+                                      EVP_CipherFinal_ex(ctx_, *out, out_len);
 
   if (r == 1 && kind_ == kCipher && IsAuthenticatedMode()) {
-    auth_tag_len_ = sizeof(auth_tag_);
+    // For GCM, the tag length is static (16 bytes), while the CCM tag length
+    // must be specified in advance.
+    if (mode == EVP_CIPH_GCM_MODE)
+      auth_tag_len_ = sizeof(auth_tag_);
+    // TOOD(tniessen) Use EVP_CTRL_AEAP_GET_TAG when migrating to OpenSSL 1.1.0
     r = EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_GCM_GET_TAG, auth_tag_len_,
                             reinterpret_cast<unsigned char*>(auth_tag_));
     CHECK_EQ(r, 1);
