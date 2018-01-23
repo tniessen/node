@@ -379,6 +379,7 @@ class CipherBase : public BaseObject {
               const char* iv,
               int iv_len,
               int auth_tag_len);
+  bool InitAuthenticated(const char *cipher_type, int iv_len, int auth_tag_len);
   bool Update(const char* data, int len, unsigned char** out, int* out_len);
   bool Final(unsigned char** out, int *out_len);
   bool SetAutoPadding(bool auto_padding);

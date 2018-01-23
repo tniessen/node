@@ -2143,10 +2143,9 @@ must adhere to certain restrictions when using the cipher API:
   12, 14, or 16 bytes.
 - When decrypting, the authentication tag must be set via `setAuthTag()` before
   specifying additional authenticated data and / or calling `update()`.
-  Otherwise, the behavior of the cipher is currently undefined and might result
-  in an error being thrown. Note that decryption without setting the correct
-  authentication tag is currently unsupported in compliance with section 2.6 of
-  [RFC3610][].
+  Otherwise, decryption will fail and `final()` will throw an error. Note that
+  decryption without setting the correct authentication tag is currently
+  unsupported in compliance with section 2.6 of [RFC 3610][].
 - When passing additional authenticated data (AAD), the length of the actual
   message in bytes must be passed to `setAAD()` via the `plaintextLength`
   option. This is not necessary if no AAD is used.
@@ -2159,32 +2158,32 @@ must adhere to certain restrictions when using the cipher API:
 ```js
 const crypto = require('crypto');
 
-const key = Buffer.from('266defe0911630ffac0e3633514e70d7', 'hex');
+const key = 'keykeykeykeykeykeykeykey';
 const nonce = crypto.randomBytes(12);
 
 const aad = Buffer.from('0123456789', 'hex');
 
-const cipher = crypto.createCipheriv('aes-128-ccm', key, nonce, {
+const cipher = crypto.createCipheriv('aes-192-ccm', key, nonce, {
   authTagLength: 16
 });
-const plaintext = Buffer.from('Hello world', 'utf8');
+const plaintext = 'Hello world';
 cipher.setAAD(aad, {
-  plaintextLength: plaintext.length
+  plaintextLength: Buffer.byteLength(plaintext)
 });
-const ciphertext = cipher.update(plaintext);
+const ciphertext = cipher.update(plaintext, 'utf8');
 cipher.final();
 const tag = cipher.getAuthTag();
 
 // Now transmit { ciphertext, tag }.
 
-const decipher = crypto.createDecipheriv('aes-128-ccm', key, nonce, {
+const decipher = crypto.createDecipheriv('aes-192-ccm', key, nonce, {
   authTagLength: 16
 });
 decipher.setAuthTag(tag);
 decipher.setAAD(aad, {
   plaintextLength: ciphertext.length
 });
-const receivedPlaintext = decipher.update(ciphertext);
+const receivedPlaintext = decipher.update(ciphertext, null, 'utf8');
 
 try {
   decipher.final();
@@ -2192,7 +2191,7 @@ try {
   console.error('Authentication failed!');
 }
 
-console.log(receivedPlaintext.toString('utf8'));
+console.log(receivedPlaintext);
 ```
 
 ## Crypto Constants
