@@ -3200,8 +3200,6 @@ bool CipherBase::InitAuthenticated(const char *cipher_type, int iv_len,
   static_assert(EVP_CTRL_CCM_SET_IVLEN == EVP_CTRL_GCM_SET_IVLEN,
                 "OpenSSL constants differ between GCM and CCM");
   if (!EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_GCM_SET_IVLEN, iv_len, nullptr)) {
-    EVP_CIPHER_CTX_free(ctx_);
-    ctx_ = nullptr;
     env()->ThrowError("Invalid IV length");
     return false;
   }
@@ -3215,9 +3213,7 @@ bool CipherBase::InitAuthenticated(const char *cipher_type, int iv_len,
     }
 
     if (!EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_CCM_SET_TAG, auth_tag_len,
-      nullptr)) {
-      EVP_CIPHER_CTX_free(ctx_);
-      ctx_ = nullptr;
+        nullptr)) {
       env()->ThrowError("Invalid authentication tag length");
       return false;
     }
@@ -3234,8 +3230,7 @@ bool CipherBase::InitAuthenticated(const char *cipher_type, int iv_len,
 bool CipherBase::IsAuthenticatedMode() const {
   // Check if this cipher operates in an AEAD mode that we support.
   CHECK_NE(ctx_, nullptr);
-  const EVP_CIPHER* const cipher = EVP_CIPHER_CTX_cipher(ctx_);
-  int mode = EVP_CIPHER_mode(cipher);
+  const int mode = EVP_CIPHER_CTX_mode(ctx_);
   return mode == EVP_CIPH_GCM_MODE || mode == EVP_CIPH_CCM_MODE;
 }
 
@@ -3297,8 +3292,7 @@ bool CipherBase::SetAAD(const char* data, unsigned int len, int plaintext_len) {
     return false;
 
   int outlen;
-  const EVP_CIPHER* const cipher = EVP_CIPHER_CTX_cipher(ctx_);
-  int mode = EVP_CIPHER_mode(cipher);
+  const int mode = EVP_CIPHER_CTX_mode(ctx_);
 
   // When in CCM mode, we need to set the authentication tag and the plaintext
   // length in advance.
