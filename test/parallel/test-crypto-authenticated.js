@@ -566,23 +566,32 @@ for (const test of TEST_CASES) {
   }
 
   {
-    const decrypt = crypto.createDecipheriv(test.algo,
-                                            Buffer.from(test.key, 'hex'),
-                                            Buffer.from(test.iv, 'hex'),
-                                            options);
-    decrypt.setAuthTag(Buffer.from(test.tag, 'hex'));
-    if (test.aad)
-      decrypt.setAAD(Buffer.from(test.aad, 'hex'), aadOptions);
-
-    const outputEncoding = test.plainIsHex ? 'hex' : 'ascii';
-
-    let msg = decrypt.update(test.ct, 'hex', outputEncoding);
-    if (!test.tampered) {
-      msg += decrypt.final(outputEncoding);
-      assert.strictEqual(msg, test.plain);
+    if (isCCM && common.hasFipsCrypto) {
+      assert.throws(() => {
+        crypto.createDecipheriv(test.algo,
+                                Buffer.from(test.key, 'hex'),
+                                Buffer.from(test.iv, 'hex'),
+                                options);
+      }, errMessages.FIPS);
     } else {
-      // assert that final throws if input data could not be verified!
-      assert.throws(function() { decrypt.final('hex'); }, errMessages.auth);
+      const decrypt = crypto.createDecipheriv(test.algo,
+                                              Buffer.from(test.key, 'hex'),
+                                              Buffer.from(test.iv, 'hex'),
+                                              options);
+      decrypt.setAuthTag(Buffer.from(test.tag, 'hex'));
+      if (test.aad)
+        decrypt.setAAD(Buffer.from(test.aad, 'hex'), aadOptions);
+
+      const outputEncoding = test.plainIsHex ? 'hex' : 'ascii';
+
+      let msg = decrypt.update(test.ct, 'hex', outputEncoding);
+      if (!test.tampered) {
+        msg += decrypt.final(outputEncoding);
+        assert.strictEqual(msg, test.plain);
+      } else {
+        // assert that final throws if input data could not be verified!
+        assert.throws(function() { decrypt.final('hex'); }, errMessages.auth);
+      }
     }
   }
 
@@ -646,12 +655,14 @@ for (const test of TEST_CASES) {
   }
 
   {
-    // trying to read tag from decryption object:
-    const decrypt = crypto.createDecipheriv(test.algo,
-                                            Buffer.from(test.key, 'hex'),
-                                            Buffer.from(test.iv, 'hex'),
-                                            options);
-    assert.throws(function() { decrypt.getAuthTag(); }, errMessages.state);
+    if (!isCCM || !common.hasFipsCrypto) {
+      // trying to read tag from decryption object:
+      const decrypt = crypto.createDecipheriv(test.algo,
+                                              Buffer.from(test.key, 'hex'),
+                                              Buffer.from(test.iv, 'hex'),
+                                              options);
+      assert.throws(function() { decrypt.getAuthTag(); }, errMessages.state);
+    }
   }
 
   {
@@ -803,32 +814,36 @@ for (const test of TEST_CASES) {
     cipher.setAAD(Buffer.from('0123456789', 'hex'));
   }, /^Error: plaintextLength required for CCM mode with AAD$/);
 
-  assert.throws(() => {
-    const cipher = crypto.createDecipheriv('aes-256-ccm',
-                                           'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
-                                           'qkuZpJWCewa6S',
-                                           {
-                                             authTagLength: 10
-                                           });
-    cipher.setAAD(Buffer.from('0123456789', 'hex'));
-  }, /^Error: plaintextLength required for CCM mode with AAD$/);
+  if (!common.hasFipsCrypto) {
+    assert.throws(() => {
+      const cipher = crypto.createDecipheriv('aes-256-ccm',
+                                             'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
+                                             'qkuZpJWCewa6S',
+                                             {
+                                               authTagLength: 10
+                                             });
+      cipher.setAAD(Buffer.from('0123456789', 'hex'));
+    }, /^Error: plaintextLength required for CCM mode with AAD$/);
+  }
 }
 
 // Test that setAAD throws in CCM mode when no authentication tag is provided.
 {
-  const key = Buffer.from('1ed2233fa2223ef5d7df08546049406c', 'hex');
-  const iv = Buffer.from('7305220bca40d4c90e1791e9', 'hex');
-  const ct = Buffer.from('8beba09d4d4d861f957d51c0794f4abf8030848e', 'hex');
-  const decrypt = crypto.createDecipheriv('aes-128-ccm', key, iv, {
-    authTagLength: 10
-  });
-  // Normally, we would do this:
-  // decrypt.setAuthTag(Buffer.from('0d9bcd142a94caf3d1dd', 'hex'));
-  assert.throws(() => {
-    decrypt.setAAD(Buffer.from('63616c76696e', 'hex'), {
-      plaintextLength: ct.length
+  if (!common.hasFipsCrypto) {
+    const key = Buffer.from('1ed2233fa2223ef5d7df08546049406c', 'hex');
+    const iv = Buffer.from('7305220bca40d4c90e1791e9', 'hex');
+    const ct = Buffer.from('8beba09d4d4d861f957d51c0794f4abf8030848e', 'hex');
+    const decrypt = crypto.createDecipheriv('aes-128-ccm', key, iv, {
+      authTagLength: 10
     });
-  }, errMessages.state);
+    // Normally, we would do this:
+    // decrypt.setAuthTag(Buffer.from('0d9bcd142a94caf3d1dd', 'hex'));
+    assert.throws(() => {
+      decrypt.setAAD(Buffer.from('63616c76696e', 'hex'), {
+        plaintextLength: ct.length
+      });
+    }, errMessages.state);
+  }
 }
 
 // Test that setAuthTag does not throw in GCM mode when called after setAAD.

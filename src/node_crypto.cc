@@ -3212,6 +3212,14 @@ bool CipherBase::InitAuthenticated(const char *cipher_type, int iv_len,
       return false;
     }
 
+#ifdef NODE_FIPS_MODE
+    // TODO(tniessen) Support CCM decryption in FIPS mode
+    if (kind_ == kDecipher && FIPS_mode()) {
+      env()->ThrowError("CCM decryption not supported in FIPS mode");
+      return false;
+    }
+#endif
+
     if (!EVP_CIPHER_CTX_ctrl(ctx_, EVP_CTRL_CCM_SET_TAG, auth_tag_len,
         nullptr)) {
       env()->ThrowError("Invalid authentication tag length");
