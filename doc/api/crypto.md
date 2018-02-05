@@ -2134,8 +2134,8 @@ See the reference for other recommendations and details.
 
 ### CCM mode
 
-CCM is the second supported AEAD algorithm. Applications which use this mode
-must adhere to certain restrictions when using the cipher API:
+CCM is one of the two supported [AEAD algorithms][]. Applications which use this
+mode must adhere to certain restrictions when using the cipher API:
 
 - The authentication tag length must be specified during cipher creation by
   setting the `authTagLength` option.
@@ -2556,6 +2556,7 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
 [`tls.createSecureContext()`]: tls.html#tls_tls_createsecurecontext_options
 [`verify.update()`]: #crypto_verify_update_data_inputencoding
 [`verify.verify()`]: #crypto_verify_verify_object_signature_signatureformat
+[AEAD algorithms]: https://en.wikipedia.org/wiki/Authenticated_encryption
 [Caveats]: #crypto_support_for_weak_or_compromised_algorithms
 [CCM mode]: #crypto_ccm_mode
 [Crypto Constants]: #crypto_crypto_constants_1

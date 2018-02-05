@@ -3310,7 +3310,7 @@ bool CipherBase::SetAAD(const char* data, unsigned int len, int plaintext_len) {
       return false;
     }
 
-    if (kind_ == kDecipher && !auth_tag_set_  && auth_tag_len_ > 0) {
+    if (kind_ == kDecipher && !auth_tag_set_ && auth_tag_len_ > 0) {
       if (!EVP_CIPHER_CTX_ctrl(ctx_,
                                EVP_CTRL_CCM_SET_TAG,
                                auth_tag_len_,

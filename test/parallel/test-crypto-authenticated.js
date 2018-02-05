@@ -486,7 +486,20 @@ const TEST_CASES = [
     ct: '8beba09d4d4d861f957d51c0794f4abf8030848e',
     tag: '29d71a70bb58dae1425d',
     tampered: false
-  }
+  },
+
+  // Test case for CCM with an empty message
+  {
+    algo: 'aes-128-ccm',
+    key: '1ed2233fa2223ef5d7df08546049406c',
+    iv: '7305220bca40d4c90e1791e9',
+    plain: '',
+    password: 'very bad password',
+    aad: '63616c76696e',
+    ct: '',
+    tag: '65a6002b2cdfe9f00027f839332ca6fc',
+    tampered: false
+  },
 ];
 
 const errMessages = {
@@ -494,6 +507,7 @@ const errMessages = {
   state: / state/,
   FIPS: /not supported in FIPS mode/,
   length: /Invalid IV length/,
+  authTagLength: /Invalid authentication tag length/
 };
 
 const ciphers = crypto.getCiphers();
@@ -505,6 +519,19 @@ const expectedWarnings = common.hasFipsCrypto ?
     'Use Cipheriv for counter mode of aes-192-ccm',
     'Use Cipheriv for counter mode of aes-128-ccm',
     'Use Cipheriv for counter mode of aes-128-ccm',
+    'Use Cipheriv for counter mode of aes-128-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
+    'Use Cipheriv for counter mode of aes-256-ccm',
     'Use Cipheriv for counter mode of aes-256-ccm'
   ];
 
@@ -701,7 +728,8 @@ for (const test of TEST_CASES) {
   }
 }
 
-// Test that setAAD throws if an invalid plaintext length has been specified.
+// Test that create(De|C)ipher(iv)? throws if the mode is CCM and an invalid
+// authentication tag length has been specified.
 {
   for (const authTagLength of [-1, true, false, NaN, 5.5]) {
     common.expectsError(() => {
@@ -750,6 +778,38 @@ for (const test of TEST_CASES) {
         message: `The value "${authTagLength}" is invalid for option ` +
                  '"authTagLength"'
       });
+    }
+  }
+
+  // The following values will not be caught by the JS layer and thus will not
+  // use the default error codes.
+  for (const authTagLength of [0, 1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18]) {
+    assert.throws(() => {
+      crypto.createCipheriv('aes-256-ccm',
+                            'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
+                            'qkuZpJWCewa6S',
+                            {
+                              authTagLength
+                            });
+    }, errMessages.authTagLength);
+
+    assert.throws(() => {
+      crypto.createDecipheriv('aes-256-ccm',
+                              'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
+                              'qkuZpJWCewa6S',
+                              {
+                                authTagLength
+                              });
+    }, errMessages.authTagLength);
+
+    if (!common.hasFipsCrypto) {
+      assert.throws(() => {
+        crypto.createCipher('aes-256-ccm', 'bad password', { authTagLength });
+      }, errMessages.authTagLength);
+
+      assert.throws(() => {
+        crypto.createDecipher('aes-256-ccm', 'bad password', { authTagLength });
+      }, errMessages.authTagLength);
     }
   }
 }
