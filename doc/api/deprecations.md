@@ -871,6 +871,17 @@ Type: Runtime
 
 `timers.unenroll()` is deprecated. Please use the publicly documented [`clearTimeout()`][] or [`clearInterval()`][] instead.
 
+<a id="DEP00XX"></a>
+### DEP00XX: `crypto.createCipher()`, `crypto.createDecipher()`
+
+Type: Runtime
+
+`crypto.createCipher()` and `crypto.createDecipher()` are deprecated. Please use
+[`crypto.createCipheriv()`][] and [`crypto.createDecipheriv()`][] instead.
+
+The legacy cipher API uses a weak key derivation function and a static
+initialization vector.
+
 [`--pending-deprecation`]: cli.html#cli_pending_deprecation
 [`Buffer.allocUnsafeSlow(size)`]: buffer.html#buffer_class_method_buffer_allocunsafeslow_size
 [`Buffer.from(array)`]: buffer.html#buffer_class_method_buffer_from_array

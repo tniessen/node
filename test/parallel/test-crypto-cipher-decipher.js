@@ -10,6 +10,13 @@ if (common.hasFipsCrypto)
 const crypto = require('crypto');
 const assert = require('assert');
 
+common.expectWarning({
+  Warning: 'Use Cipheriv for counter mode of aes-256-gcm',
+  DeprecationWarning: [
+    'crypto.createCipher is deprecated. Use createCipheriv instead.'
+  ]
+});
+
 function testCipher1(key) {
   // Test encryption and decryption
   const plaintext = 'Keep this a secret? No! Tell everyone about node.js!';
@@ -232,9 +239,6 @@ testCipher2(Buffer.from('0123456789abcdef'));
   const key = '0123456789';
   const aadbuf = Buffer.from('aadbuf');
   const data = Buffer.from('test-crypto-cipher-decipher');
-
-  common.expectWarning('Warning',
-                       'Use Cipheriv for counter mode of aes-256-gcm');
 
   const cipher = crypto.createCipher('aes-256-gcm', key);
   cipher.setAAD(aadbuf);
