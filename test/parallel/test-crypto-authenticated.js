@@ -793,16 +793,16 @@ for (const test of TEST_CASES) {
                             });
     }, errMessages.authTagLength);
 
-    assert.throws(() => {
-      crypto.createDecipheriv('aes-256-ccm',
-                              'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
-                              'qkuZpJWCewa6S',
-                              {
-                                authTagLength
-                              });
-    }, errMessages.authTagLength);
-
     if (!common.hasFipsCrypto) {
+      assert.throws(() => {
+        crypto.createDecipheriv('aes-256-ccm',
+                                'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
+                                'qkuZpJWCewa6S',
+                                {
+                                  authTagLength
+                                });
+      }, errMessages.authTagLength);
+
       assert.throws(() => {
         crypto.createCipher('aes-256-ccm', 'bad password', { authTagLength });
       }, errMessages.authTagLength);
@@ -823,13 +823,14 @@ for (const test of TEST_CASES) {
                           'qkuZpJWCewa6S');
   }, /^Error: authTagLength required for aes-256-ccm$/);
 
-  assert.throws(() => {
-    crypto.createDecipheriv('aes-256-ccm',
-                            'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
-                            'qkuZpJWCewa6S');
-  }, /^Error: authTagLength required for aes-256-ccm$/);
-
+  // CCM decryption and create(De|C)ipher are unsupported in FIPS mode.
   if (!common.hasFipsCrypto) {
+    assert.throws(() => {
+      crypto.createDecipheriv('aes-256-ccm',
+                              'FxLKsqdmv0E9xrQhp0b1ZgI0K7JFZJM8',
+                              'qkuZpJWCewa6S');
+    }, /^Error: authTagLength required for aes-256-ccm$/);
+
     assert.throws(() => {
       crypto.createCipher('aes-256-ccm', 'very bad password');
     }, /^Error: authTagLength required for aes-256-ccm$/);
