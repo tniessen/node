@@ -50,6 +50,7 @@ async function testNoCrashWithExceptionInCallback() {
   const error = new Error('We expect this');
   console.log('Expecting warning to be emitted');
   const promise = new Promise(waitForWarningSkipAsyncStackTraces);
+  common.expectWarning('', 'Error: We expect this');
   session.post('Console.enable', () => { throw error; });
   assert.strictEqual(await promise, error);
   session.disconnect();

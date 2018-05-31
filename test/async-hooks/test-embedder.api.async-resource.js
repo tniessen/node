@@ -47,6 +47,10 @@ assert.strictEqual(typeof alcaEvent.asyncId(), 'number');
 assert.notStrictEqual(alcaEvent.asyncId(), alcaTriggerId);
 assert.strictEqual(alcaEvent.triggerAsyncId(), alcaTriggerId);
 
+common.expectWarning('DeprecationWarning',
+                     'asyncResource.emitBefore and emitAfter are deprecated. ' +
+                     'Please use asyncResource.runInAsyncScope instead',
+                     'DEP0098');
 alcaEvent.emitBefore();
 checkInvocations(alcazares, { init: 1, before: 1 },
                  'alcazares emitted before');
@@ -78,7 +82,6 @@ function tick1() {
   pobEvent.emitBefore();
   checkInvocations(poblado, { init: 1, before: 1 },
                    'poblado emitted before');
-
   pobEvent.emitAfter();
   checkInvocations(poblado, { init: 1, before: 1, after: 1 },
                    'poblado emitted after');

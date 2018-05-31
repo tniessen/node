@@ -1,9 +1,14 @@
 'use strict';
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const async_hooks = require('async_hooks');
 
 // This test verifies that the async ID stack can grow indefinitely.
+
+common.expectWarning('DeprecationWarning',
+                     'asyncResource.emitBefore and emitAfter are deprecated. ' +
+                     'Please use asyncResource.runInAsyncScope instead',
+                     'DEP0098');
 
 function recurse(n) {
   const a = new async_hooks.AsyncResource('foobar');

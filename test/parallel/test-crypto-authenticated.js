@@ -27,6 +27,9 @@ if (!common.hasCrypto)
 const assert = require('assert');
 const crypto = require('crypto');
 
+common.expectWarning('DeprecationWarning',
+                     'crypto.DEFAULT_ENCODING is deprecated.',
+                     'DEP0091');
 crypto.DEFAULT_ENCODING = 'buffer';
 
 //
@@ -712,37 +715,6 @@ const errMessages = {
 
 const ciphers = crypto.getCiphers();
 
-const expectedWarnings = common.hasFipsCrypto ?
-  [] : [
-    ['Use Cipheriv for counter mode of aes-192-gcm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-192-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-192-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-128-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-128-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-128-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode]
-  ];
-
-const expectedDeprecationWarnings = ['crypto.DEFAULT_ENCODING is deprecated.',
-                                     'DEP0091'];
-
-common.expectWarning({
-  Warning: expectedWarnings,
-  DeprecationWarning: expectedDeprecationWarnings
-});
-
 for (const test of TEST_CASES) {
   if (!ciphers.includes(test.algo)) {
     common.printSkipMessage(`unsupported ${test.algo} test`);
@@ -825,6 +797,8 @@ for (const test of TEST_CASES) {
       assert.throws(() => { crypto.createCipher(test.algo, test.password); },
                     errMessages.FIPS);
     } else {
+      common.expectWarning('Warning',
+                           `Use Cipheriv for counter mode of ${test.algo}`);
       const encrypt = crypto.createCipher(test.algo, test.password, options);
       if (test.aad)
         encrypt.setAAD(Buffer.from(test.aad, 'hex'), aadOptions);
@@ -1031,6 +1005,8 @@ for (const test of TEST_CASES) {
 
     if (!common.hasFipsCrypto) {
       common.expectsError(() => {
+        common.expectWarning('Warning',
+                             'Use Cipheriv for counter mode of aes-256-ccm');
         crypto.createCipher('aes-256-ccm', 'bad password', { authTagLength });
       }, {
         type: TypeError,
@@ -1073,6 +1049,8 @@ for (const test of TEST_CASES) {
       }, errMessages.authTagLength);
 
       assert.throws(() => {
+        common.expectWarning('Warning',
+                             'Use Cipheriv for counter mode of aes-256-ccm');
         crypto.createCipher('aes-256-ccm', 'bad password', { authTagLength });
       }, errMessages.authTagLength);
 

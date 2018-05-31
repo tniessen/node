@@ -18,6 +18,10 @@ if (process.argv[2] === 'child') {
 
   // Emitting 'before', 'after' and then 'destroy'
   const event1 = new AsyncResource('event1', async_hooks.executionAsyncId());
+  common.expectWarning('DeprecationWarning',
+                       'asyncResource.emitBefore and emitAfter are ' +
+                       'deprecated. Please use asyncResource.runInAsyncScope ' +
+                       'instead', 'DEP0098');
   event1.emitBefore();
   event1.emitAfter();
   event1.emitDestroy();

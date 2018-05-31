@@ -615,55 +615,39 @@ exports.isAlive = function isAlive(pid) {
 
 exports.noWarnCode = undefined;
 
-function expectWarning(name, expected) {
-  const map = new Map(expected);
-  return exports.mustCall((warning) => {
-    assert.strictEqual(warning.name, name);
-    assert.ok(map.has(warning.message),
-              `unexpected error message: "${warning.message}"`);
-    const code = map.get(warning.message);
-    assert.strictEqual(warning.code, code);
-    // Remove a warning message after it is seen so that we guarantee that we
-    // get each message only once.
-    map.delete(expected);
-  }, expected.length);
-}
-
-function expectWarningByName(name, expected, code) {
-  if (typeof expected === 'string') {
-    expected = [[expected, code]];
+const pendingWarnings = [];
+// TODO: Merge with other 'exit' handler(s)?
+process.on('exit', () => {
+  assert.strictEqual(pendingWarnings.length, 0,
+                     `Expected ${pendingWarnings.length} more process ` +
+                     `warnings: ${JSON.stringify(pendingWarnings, null, ' ')}`);
+});
+process.on('warning', (warning) => {
+  function matches(p, v) {
+    if (p instanceof RegExp)
+      return p.test(v);
+    return p === v;
   }
-  process.on('warning', expectWarning(name, expected));
-}
 
-function expectWarningByMap(warningMap) {
-  const catchWarning = {};
-  Object.keys(warningMap).forEach((name) => {
-    let expected = warningMap[name];
-    if (!Array.isArray(expected)) {
-      throw new Error('warningMap entries must be arrays consisting of two ' +
-      'entries: [message, warningCode]');
-    }
-    if (!(Array.isArray(expected[0]))) {
-      if (expected.length === 0) {
-        return;
-      }
-      expected = [[expected[0], expected[1]]];
-    }
-    catchWarning[name] = expectWarning(name, expected);
+  // console.log(`Got a warning: name=${JSON.stringify(warning.name)}, message=$
+  // {JSON.stringify(warning.message)}, code=${JSON.stringify(warning.code)}`);
+  const index = pendingWarnings.findIndex((w) => {
+    return matches(w.name, warning.name) &&
+           matches(w.code, warning.code) &&
+           matches(w.message, warning.message);
   });
-  process.on('warning', (warning) => catchWarning[warning.name](warning));
-}
+  if (index === -1 && warning.name === 'ExperimentalWarning')
+    return;
+  assert.notStrictEqual(index, -1,
+                        `Unexpected process warning: ${warning} (expected ` +
+                        `${JSON.stringify(pendingWarnings)}, but was ` +
+                        `${JSON.stringify(warning)})`);
+  pendingWarnings.splice(index, 1);
+});
 
-// accepts a warning name and description or array of descriptions or a map
-// of warning names to description(s)
-// ensures a warning is generated for each name/description pair
-exports.expectWarning = function(nameOrMap, expected, code) {
-  if (typeof nameOrMap === 'string') {
-    expectWarningByName(nameOrMap, expected, code);
-  } else {
-    expectWarningByMap(nameOrMap);
-  }
+exports.expectWarning = function(name, message, code) {
+  // TODO: Typecheck name, message, code properly
+  pendingWarnings.push({ name, message, code, expectedAt: new Error().stack });
 };
 
 Object.defineProperty(exports, 'hasIntl', {

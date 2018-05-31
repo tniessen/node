@@ -45,6 +45,9 @@ const server = net.createServer(common.mustCall(function(socket) {
   const sslcontext = tls.createSecureContext({ key, cert });
   sslcontext.context.setCiphers('RC4-SHA:AES128-SHA:AES256-SHA');
 
+  common.expectWarning('DeprecationWarning',
+                       'tls.createSecurePair() is deprecated. ' +
+                       'Please use tls.TLSSocket instead.');
   const pair = tls.createSecurePair(sslcontext, true);
 
   assert.ok(pair.encrypted.writable);
