@@ -3113,22 +3113,17 @@ bool CipherBase::Final(unsigned char** out, int* out_len) {
 
   // In CCM mode, final() only checks whether authentication failed in update().
   // EVP_CipherFinal_ex must not be called and will fail.
-  bool ok;
-  if (kind_ == kDecipher && mode == EVP_CIPH_CCM_MODE) {
-    ok = !pending_auth_failed_;
-  } else {
-    ok = EVP_CipherFinal_ex(ctx_.get(), *out, out_len) == 1;
-
-    if (ok && kind_ == kCipher && IsAuthenticatedMode()) {
-      // In GCM mode, the authentication tag length can be specified in advance,
-      // but defaults to 16 bytes when encrypting. In CCM mode, it must always
-      // be given by the user.
-      if (mode == EVP_CIPH_GCM_MODE && auth_tag_len_ == kNoAuthTagLength)
-        auth_tag_len_ = sizeof(auth_tag_);
-      CHECK_EQ(1, EVP_CIPHER_CTX_ctrl(ctx_.get(), EVP_CTRL_AEAD_GET_TAG,
-                      auth_tag_len_,
-                      reinterpret_cast<unsigned char*>(auth_tag_)));
-    }
+  bool ok = !pending_auth_failed_ &&
+            EVP_CipherFinal_ex(ctx_.get(), *out, out_len) == 1;
+  if (ok && kind_ == kCipher && IsAuthenticatedMode()) {
+    // In GCM mode, the authentication tag length can be specified in advance,
+    // but defaults to 16 bytes when encrypting. In CCM mode, it must always
+    // be given by the user.
+    if (mode == EVP_CIPH_GCM_MODE && auth_tag_len_ == kNoAuthTagLength)
+      auth_tag_len_ = sizeof(auth_tag_);
+    CHECK_EQ(1, EVP_CIPHER_CTX_ctrl(ctx_.get(), EVP_CTRL_AEAD_GET_TAG,
+                    auth_tag_len_,
+                    reinterpret_cast<unsigned char*>(auth_tag_)));
   }
 
   ctx_.reset();
