@@ -68,6 +68,11 @@ Buffer.from('', 'ascii');
 Buffer.from('', 'latin1');
 Buffer.alloc(0);
 Buffer.allocUnsafe(0);
+common.expectWarning('DeprecationWarning',
+                     'Buffer() is deprecated due to security and usability ' +
+                     'issues. Please use the Buffer.alloc(), ' +
+                     'Buffer.allocUnsafe(), or Buffer.from() methods instead.',
+                     'DEP0005');
 new Buffer('');
 new Buffer('', 'ascii');
 new Buffer('', 'latin1');

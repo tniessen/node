@@ -1,6 +1,6 @@
 'use strict';
 
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const SlowBuffer = require('buffer').SlowBuffer;
 
@@ -20,6 +20,11 @@ const allocators = [
   Buffer.allocUnsafe,
   Buffer.allocUnsafeSlow
 ];
+common.expectWarning('DeprecationWarning',
+                     'Buffer() is deprecated due to security and usability ' +
+                     'issues. Please use the Buffer.alloc(), ' +
+                     'Buffer.allocUnsafe(), or Buffer.from() methods instead.',
+                     'DEP0005');
 for (const allocator of allocators) {
   for (const size of sizes) {
     try {

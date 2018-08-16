@@ -78,6 +78,11 @@ assert.throws(function() {
   ab[2] = 3;
   ab[3] = 4;
   ab[4] = 5;
+  common.expectWarning('DeprecationWarning',
+                       'DeprecationWarning: Buffer() is deprecated due to ' +
+                       'security and usability issues. Please use the ' +
+                       'Buffer.alloc(), Buffer.allocUnsafe(), or ' +
+                       'Buffer.from() methods instead.');
   const buf = Buffer(ab.buffer, 1, 3);
   assert.strictEqual(buf.length, 3);
   assert.strictEqual(buf[0], 2);

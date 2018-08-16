@@ -1,8 +1,9 @@
 'use strict';
 
-require('../common');
+const common = require('../common');
 
 if (process.argv[2] === 'async') {
+  common.expectWarning('UnhandledPromiseRejectionWarning', 'Error');
   async function fn() {
     fn();
     throw new Error();

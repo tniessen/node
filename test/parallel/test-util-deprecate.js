@@ -4,7 +4,6 @@ const common = require('../common');
 
 // Tests basic functionality of util.deprecate().
 
-const assert = require('assert');
 const util = require('util');
 
 const expectedWarnings = new Map();
