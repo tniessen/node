@@ -29,7 +29,6 @@ class SharedArrayBufferMetadata
       Environment* env,
       v8::Local<v8::Context> context,
       v8::Local<v8::SharedArrayBuffer> source);
-  ~SharedArrayBufferMetadata();
 
   // Create a SharedArrayBuffer object for a specific Environment and Context.
   // The created SharedArrayBuffer will be in externalized mode and has
@@ -54,7 +53,7 @@ class SharedArrayBufferMetadata
       v8::Local<v8::Context> context,
       v8::Local<v8::SharedArrayBuffer> target);
 
-  void* data = nullptr;
+  DeleteFnPtr<void, free> data;
   size_t size = 0;
 };
 

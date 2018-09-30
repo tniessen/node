@@ -116,14 +116,10 @@ Maybe<bool> SharedArrayBufferMetadata::AssignToSharedArrayBuffer(
 SharedArrayBufferMetadata::SharedArrayBufferMetadata(void* data, size_t size)
   : data(data), size(size) { }
 
-SharedArrayBufferMetadata::~SharedArrayBufferMetadata() {
-  free(data);
-}
-
 MaybeLocal<SharedArrayBuffer> SharedArrayBufferMetadata::GetSharedArrayBuffer(
     Environment* env, Local<Context> context) {
   Local<SharedArrayBuffer> obj =
-      SharedArrayBuffer::New(env->isolate(), data, size);
+      SharedArrayBuffer::New(env->isolate(), data.get(), size);
 
   if (AssignToSharedArrayBuffer(env, context, obj).IsNothing())
     return MaybeLocal<SharedArrayBuffer>();
