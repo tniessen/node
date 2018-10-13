@@ -173,8 +173,7 @@ void Kill(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Local<Context> context = env->context();
 
-  if (args.Length() != 2)
-    return env->ThrowError("Bad argument.");
+  CHECK_EQ(args.Length(), 2);
 
   int pid;
   if (!args[0]->Int32Value(context).To(&pid)) return;
