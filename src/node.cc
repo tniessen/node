@@ -40,6 +40,7 @@
 
 #if HAVE_OPENSSL
 #include "node_crypto.h"
+#include "node_secure_heap.h"
 #endif
 
 #if defined(NODE_HAVE_I18N_SUPPORT)
@@ -128,6 +129,7 @@ namespace node {
 using native_module::NativeModuleEnv;
 using options_parser::kAllowedInEnvironment;
 using options_parser::kDisallowedInEnvironment;
+using secure_heap::SecureHeap;
 
 using v8::Boolean;
 using v8::EscapableHandleScope;
@@ -922,6 +924,12 @@ InitializationResult InitializeOncePerProcess(int argc, char** argv) {
   // the random source is properly initialized first.
   OPENSSL_init();
 #endif  // NODE_FIPS_MODE
+
+  if (per_process::cli_options->experimental_secure_heap) {
+    static SecureHeap heap;
+    heap.ActivatePerProcess();
+  }
+
   // V8 on Windows doesn't have a good source of entropy. Seed it from
   // OpenSSL's pool.
   V8::SetEntropySource(crypto::EntropySource);
