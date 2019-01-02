@@ -274,6 +274,23 @@ void *CRYPTO_realloc(void *addr, size_t num, const char *file, int line);
 void *CRYPTO_clear_realloc(void *addr, size_t old_num, size_t num,
                            const char *file, int line);
 
+// TODO: What about realloc?
+// TODO: Should there be a hint (a void* parameter for these functions to specify user-specific context)?
+int CRYPTO_set_secure_mem_functions(
+        int (*done) (void),
+        void *(*malloc) (size_t, const char *, int),
+        void *(*zalloc) (size_t, const char *, int),
+        void (*free) (void *, const char *, int),
+        void (*clear_free) (void *ptr, size_t num,
+                            const char *file, int line),
+        int (*allocated) (const void* ptr),
+        int (*initialized) (void),
+        size_t (*actual_size) (void *ptr),
+        size_t (*used) (void));
+void CRYPTO_get_secure_mem_functions( // TODO
+        void *(**m) (size_t, const char *, int),
+        void *(**r) (void *, size_t, const char *, int),
+        void (**f) (void *, const char *, int));
 int CRYPTO_secure_malloc_init(size_t sz, int minsize);
 int CRYPTO_secure_malloc_done(void);
 void *CRYPTO_secure_malloc(size_t num, const char *file, int line);

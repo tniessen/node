@@ -221,6 +221,7 @@ class PerProcessOptions : public Options {
 
   // TODO(addaleax): Some of these could probably be per-Environment.
 #if HAVE_OPENSSL
+  bool experimental_secure_heap = false;
   std::string openssl_config;
   std::string tls_cipher_list = DEFAULT_CIPHER_LIST_CORE;
 #ifdef NODE_OPENSSL_CERT_STORE

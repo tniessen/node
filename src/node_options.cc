@@ -704,6 +704,10 @@ PerProcessOptionsParser::PerProcessOptionsParser(
 #endif
 
 #if HAVE_OPENSSL
+  AddOption("--experimental-secure-heap",
+            "experimental secure heap for cryptographic data",
+            &PerProcessOptions::experimental_secure_heap,
+            kAllowedInEnvironment);
   AddOption("--openssl-config",
             "load OpenSSL configuration from the specified file "
             "(overrides OPENSSL_CONF)",

@@ -201,6 +201,7 @@ added: v11.8.0
 
 Enable experimental diagnostic report feature.
 
+<<<<<<< HEAD
 ### `--experimental-resolve-self`
 <!-- YAML
 added: v13.1.0
@@ -208,6 +209,20 @@ added: v13.1.0
 
 Enable experimental support for a package using `require` or `import` to load
 itself.
+
+### `--experimental-secure-heap`
+<!-- YAML
+added: REPLACEME
+-->
+
+Enable an experimental secure heap implementation. This option causes OpenSSL
+to store sensitive data such as private keys in a protected memory area.
+
+Note that data stored in the secure heap is locked into memory. Most operating
+systems restrict the number of pages that can be locked into memory by a single
+process. On Linux systems, the current limit can be accessed using `ulimit -l`.
+If the Node.js process exceeds the limit and is unable to allocate additional
+protected memory, it will terminate.
 
 ### `--experimental-specifier-resolution=mode`
 <!-- YAML

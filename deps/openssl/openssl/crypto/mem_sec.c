@@ -13,7 +13,7 @@
  * to be used by external consumers, and to be used by OpenSSL to store
  * data in a "secure arena." The second half implements the secure arena.
  * For details on that implementation, see below (look for uppercase
- * "SECURE HEAP IMPLEMENTATION").
+ * "DEFAULT SECURE HEAP IMPLEMENTATION").
  */
 #include "e_os.h"
 #include <openssl/crypto.h>
@@ -47,36 +47,97 @@
 # define MAP_ANON MAP_ANONYMOUS
 #endif
 
+static CRYPTO_RWLOCK *sec_malloc_lock = NULL;
+
 #ifdef OPENSSL_SECURE_MEMORY
+
+/*
+* These are declarations for the default secure heap implementation.
+*/
 static size_t secure_mem_used;
 
-static int secure_mem_initialized;
-
-static CRYPTO_RWLOCK *sec_malloc_lock = NULL;
+static int sh_def_init(size_t size, int minsize);
+static void *sh_def_malloc(size_t size, const char *, int);
+static void sh_def_free(void *ptr, const char *, int);
+static int sh_def_done(void);
+static int sh_def_allocated(const void *);
+static int sh_def_initialized(void);
+static size_t sh_def_actual_size(void *);
+static size_t sh_def_used(void);
 
 /*
  * These are the functions that must be implemented by a secure heap (sh).
  */
-static int sh_init(size_t size, int minsize);
-static void *sh_malloc(size_t size);
-static void sh_free(void *ptr);
-static void sh_done(void);
-static size_t sh_actual_size(char *ptr);
-static int sh_allocated(const char *ptr);
-#endif
+static void *(*sh_malloc) (size_t, const char *, int) = sh_def_malloc;
+static void *(*sh_zalloc) (size_t, const char *, int) = sh_def_malloc;
+static void (*sh_free) (void *, const char *, int) = sh_def_free;
+static void (*sh_clear_free) (void *, size_t, const char*, int) = NULL;
+static int (*sh_done) (void) = sh_def_done;
+static int (*sh_allocated) (const void *) = sh_def_allocated;
+static int (*sh_initialized) (void) = sh_def_initialized;
+static size_t (*sh_actual_size) (void *) = sh_def_actual_size;
+static size_t (*sh_used) (void) = sh_def_used;
+
+#else
+
+/*
+ * These are the functions that must be implemented by a secure heap (sh).
+ */
+static void *(*sh_malloc) (size_t, const char *, int) = NULL;
+static void *(*sh_zalloc) (size_t, const char *, int) = NULL;
+static void (*sh_free) (size_t, const char *, int) = NULL;
+static void (*sh_clear_free) (void *, size_t, const char*, int) = NULL;
+static int (*sh_done) (void) = NULL;
+static int (*sh_allocated) (const void *) = NULL;
+static int (*sh_initialized) (void) = NULL;
+static size_t (*sh_actual_size) (void *) = NULL;
+static size_t (*sh_used) (void) = NULL;
+#endif /* OPENSSL_SECURE_MEMORY */
+
+int CRYPTO_set_secure_mem_functions(
+        int (*done) (void),
+        void *(*malloc) (size_t, const char *, int),
+        void *(*zalloc) (size_t, const char *, int),
+        void (*free) (void *, const char *, int),
+        void (*clear_free) (void *ptr, size_t num,
+                            const char *file, int line),
+        int (*allocated) (const void* ptr),
+        int (*initialized) (void),
+        size_t (*actual_size) (void *ptr),
+        size_t (*used) (void))
+{
+    int ret = 0;
+
+    if (sec_malloc_lock == NULL) {
+      sec_malloc_lock = CRYPTO_THREAD_lock_new();
+      if (sec_malloc_lock == NULL)
+        return 0;
+
+      sh_done = done;
+      sh_malloc = malloc;
+      sh_zalloc = zalloc;
+      sh_free = free;
+      sh_clear_free = clear_free;
+      sh_allocated = allocated;
+      sh_initialized = initialized;
+      sh_actual_size = actual_size;
+      sh_used = used;
+      ret = 1;
+    }
+
+    return ret;
+}
 
 int CRYPTO_secure_malloc_init(size_t size, int minsize)
 {
 #ifdef OPENSSL_SECURE_MEMORY
     int ret = 0;
 
-    if (!secure_mem_initialized) {
+    if (sec_malloc_lock == NULL) {
         sec_malloc_lock = CRYPTO_THREAD_lock_new();
         if (sec_malloc_lock == NULL)
             return 0;
-        if ((ret = sh_init(size, minsize)) != 0) {
-            secure_mem_initialized = 1;
-        } else {
+        if ((ret = sh_def_init(size, minsize)) == 0) {
             CRYPTO_THREAD_lock_free(sec_malloc_lock);
             sec_malloc_lock = NULL;
         }
@@ -90,150 +151,124 @@ int CRYPTO_secure_malloc_init(size_t size, int minsize)
 
 int CRYPTO_secure_malloc_done(void)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    if (secure_mem_used == 0) {
-        sh_done();
-        secure_mem_initialized = 0;
-        CRYPTO_THREAD_lock_free(sec_malloc_lock);
-        sec_malloc_lock = NULL;
-        return 1;
+    if (sec_malloc_lock != NULL) {
+        if (sh_done()) {
+            CRYPTO_THREAD_lock_free(sec_malloc_lock);
+            sec_malloc_lock = NULL;
+            return 1;
+        }
     }
-#endif /* OPENSSL_SECURE_MEMORY */
+
     return 0;
 }
 
 int CRYPTO_secure_malloc_initialized(void)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    return secure_mem_initialized;
-#else
-    return 0;
-#endif /* OPENSSL_SECURE_MEMORY */
+    return sec_malloc_lock != NULL && (!sh_initialized || sh_initialized());
 }
 
 void *CRYPTO_secure_malloc(size_t num, const char *file, int line)
 {
-#ifdef OPENSSL_SECURE_MEMORY
     void *ret;
-    size_t actual_size;
 
-    if (!secure_mem_initialized) {
+    if (sec_malloc_lock == NULL) {
         return CRYPTO_malloc(num, file, line);
     }
+
     CRYPTO_THREAD_write_lock(sec_malloc_lock);
-    ret = sh_malloc(num);
-    actual_size = ret ? sh_actual_size(ret) : 0;
-    secure_mem_used += actual_size;
+    ret = sh_malloc(num, file, line);
     CRYPTO_THREAD_unlock(sec_malloc_lock);
     return ret;
-#else
-    return CRYPTO_malloc(num, file, line);
-#endif /* OPENSSL_SECURE_MEMORY */
 }
 
 void *CRYPTO_secure_zalloc(size_t num, const char *file, int line)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    if (secure_mem_initialized)
-        /* CRYPTO_secure_malloc() zeroes allocations when it is implemented */
-        return CRYPTO_secure_malloc(num, file, line);
-#endif
-    return CRYPTO_zalloc(num, file, line);
+    void *ret = NULL;
+
+    if (sec_malloc_lock == NULL) {
+        return CRYPTO_zalloc(num, file, line);
+    }
+
+    CRYPTO_THREAD_write_lock(sec_malloc_lock);
+    if (sh_zalloc) {
+        ret = sh_zalloc(num, file, line);
+    } else {
+        ret = sh_malloc(num, file, line);
+        if (ret)
+            CLEAR(ret, num);
+    }
+    CRYPTO_THREAD_unlock(sec_malloc_lock);
+
+    return ret;
 }
 
 void CRYPTO_secure_free(void *ptr, const char *file, int line)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    size_t actual_size;
-
     if (ptr == NULL)
         return;
+
     if (!CRYPTO_secure_allocated(ptr)) {
         CRYPTO_free(ptr, file, line);
         return;
     }
+
     CRYPTO_THREAD_write_lock(sec_malloc_lock);
-    actual_size = sh_actual_size(ptr);
-    CLEAR(ptr, actual_size);
-    secure_mem_used -= actual_size;
-    sh_free(ptr);
+    sh_free(ptr, file, line);
     CRYPTO_THREAD_unlock(sec_malloc_lock);
-#else
-    CRYPTO_free(ptr, file, line);
-#endif /* OPENSSL_SECURE_MEMORY */
 }
 
 void CRYPTO_secure_clear_free(void *ptr, size_t num,
                               const char *file, int line)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    size_t actual_size;
-
     if (ptr == NULL)
         return;
+
     if (!CRYPTO_secure_allocated(ptr)) {
-        OPENSSL_cleanse(ptr, num);
-        CRYPTO_free(ptr, file, line);
+        CRYPTO_clear_free(ptr, num, file, line);
         return;
     }
+
     CRYPTO_THREAD_write_lock(sec_malloc_lock);
-    actual_size = sh_actual_size(ptr);
-    CLEAR(ptr, actual_size);
-    secure_mem_used -= actual_size;
-    sh_free(ptr);
+    sh_clear_free(ptr, num, file, line);
     CRYPTO_THREAD_unlock(sec_malloc_lock);
-#else
-    if (ptr == NULL)
-        return;
-    OPENSSL_cleanse(ptr, num);
-    CRYPTO_free(ptr, file, line);
-#endif /* OPENSSL_SECURE_MEMORY */
 }
 
 int CRYPTO_secure_allocated(const void *ptr)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    int ret;
+    int ret = 0;
 
-    if (!secure_mem_initialized)
-        return 0;
-    CRYPTO_THREAD_write_lock(sec_malloc_lock);
-    ret = sh_allocated(ptr);
-    CRYPTO_THREAD_unlock(sec_malloc_lock);
+    if (sec_malloc_lock != NULL) {
+        CRYPTO_THREAD_write_lock(sec_malloc_lock);
+        ret = sh_allocated(ptr);
+        CRYPTO_THREAD_unlock(sec_malloc_lock);
+    }
+
     return ret;
-#else
-    return 0;
-#endif /* OPENSSL_SECURE_MEMORY */
 }
 
 size_t CRYPTO_secure_used(void)
 {
-#ifdef OPENSSL_SECURE_MEMORY
-    return secure_mem_used;
-#else
-    return 0;
-#endif /* OPENSSL_SECURE_MEMORY */
+    return sec_malloc_lock == NULL ? 0 : sh_used();
 }
 
 size_t CRYPTO_secure_actual_size(void *ptr)
 {
-#ifdef OPENSSL_SECURE_MEMORY
     size_t actual_size;
+
+    if (sec_malloc_lock == NULL)
+        return 0;
 
     CRYPTO_THREAD_write_lock(sec_malloc_lock);
     actual_size = sh_actual_size(ptr);
     CRYPTO_THREAD_unlock(sec_malloc_lock);
     return actual_size;
-#else
-    return 0;
-#endif
 }
 /* END OF PAGE ...
 
    ... START OF PAGE */
 
 /*
- * SECURE HEAP IMPLEMENTATION
+ * DEFAULT SECURE HEAP IMPLEMENTATION
  */
 #ifdef OPENSSL_SECURE_MEMORY
 
@@ -373,7 +408,7 @@ static void sh_remove_from_list(char *ptr)
 }
 
 
-static int sh_init(size_t size, int minsize)
+static int sh_def_init(size_t size, int minsize)
 {
     int ret;
     size_t i;
@@ -497,7 +532,7 @@ static int sh_init(size_t size, int minsize)
     return 0;
 }
 
-static void sh_done(void)
+static int sh_def_done(void)
 {
     OPENSSL_free(sh.freelist);
     OPENSSL_free(sh.bittable);
@@ -505,9 +540,10 @@ static void sh_done(void)
     if (sh.map_result != NULL && sh.map_size)
         munmap(sh.map_result, sh.map_size);
     memset(&sh, 0, sizeof(sh));
+    return 1;
 }
 
-static int sh_allocated(const char *ptr)
+static int sh_def_allocated(const void *ptr)
 {
     return WITHIN_ARENA(ptr) ? 1 : 0;
 }
@@ -526,7 +562,7 @@ static char *sh_find_my_buddy(char *ptr, int list)
     return chunk;
 }
 
-static void *sh_malloc(size_t size)
+static void *sh_def_malloc(size_t size, const char *file, int line)
 {
     ossl_ssize_t list, slist;
     size_t i;
@@ -588,10 +624,12 @@ static void *sh_malloc(size_t size)
     /* zero the free list header as a precaution against information leakage */
     memset(chunk, 0, sizeof(SH_LIST));
 
+    secure_mem_used += sh.arena_size / (ONE << list);
+
     return chunk;
 }
 
-static void sh_free(void *ptr)
+static void sh_def_free(void *ptr, const char *file, int line)
 {
     size_t list;
     void *buddy;
@@ -600,12 +638,16 @@ static void sh_free(void *ptr)
         return;
     OPENSSL_assert(WITHIN_ARENA(ptr));
     if (!WITHIN_ARENA(ptr))
-        return;
+        return; // TODO: This seems like a bug in OpenSSL, why would they check this after assert? (Unless the macro is only expanded conditionally.)
 
     list = sh_getlist(ptr);
     OPENSSL_assert(sh_testbit(ptr, list, sh.bittable));
     sh_clearbit(ptr, list, sh.bitmalloc);
     sh_add_to_list(&sh.freelist[list], ptr);
+
+    size_t actual_size = sh.arena_size / (ONE << list);
+    CLEAR(ptr, actual_size);
+    secure_mem_used -= actual_size;
 
     /* Try to coalesce two adjacent free areas. */
     while ((buddy = sh_find_my_buddy(ptr, list)) != NULL) {
@@ -632,7 +674,17 @@ static void sh_free(void *ptr)
     }
 }
 
-static size_t sh_actual_size(char *ptr)
+static size_t sh_def_used(void)
+{
+    return secure_mem_used;
+}
+
+static int sh_def_initialized(void)
+{
+    return 1;
+}
+
+static size_t sh_def_actual_size(void *ptr)
 {
     int list;
 
