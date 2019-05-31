@@ -797,6 +797,12 @@ The given crypto key object's type is invalid for the attempted operation.
 A crypto method was used on an object that was in an invalid state. For
 instance, calling [`cipher.getAuthTag()`][] before calling `cipher.final()`.
 
+<a id="ERR_CRYPTO_NO_SECURE_HEAP"></a>
+### ERR_CRYPTO_NO_SECURE_HEAP
+
+A request for securely allocated memory was made even though the secure heap
+feature was not enabled. See [`--experimental-secure-heap`][].
+
 <a id="ERR_CRYPTO_PBKDF2_ERROR"></a>
 ### ERR_CRYPTO_PBKDF2_ERROR
 
@@ -2395,6 +2401,7 @@ This `Error` is thrown when a read is attempted on a TTY `WriteStream`,
 such as `process.stdout.on('data')`.
 
 [`'uncaughtException'`]: process.html#process_event_uncaughtexception
+[`--experimental-secure-heap`]: cli.html#cli_experimental_secure_heap
 [`--force-fips`]: cli.html#cli_force_fips
 [`Class: assert.AssertionError`]: assert.html#assert_class_assert_assertionerror
 [`ERR_INVALID_ARG_TYPE`]: #ERR_INVALID_ARG_TYPE

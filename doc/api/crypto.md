@@ -1565,6 +1565,20 @@ be passed instead of a public key.
 
 ## `crypto` module methods and properties
 
+### crypto.alloc(size)
+<!-- YAML
+added: REPLACEME
+-->
+
+> Stability: 1 - Experimental
+
+* `size` {number}
+* Returns: {Buffer}
+
+Allocates a buffer of the given `size` on the "secure heap". This feature is
+only available if the process was started with the flag
+[`--experimental-secure-heap`][], otherwise, an error is thrown.
+
 ### crypto.constants
 <!-- YAML
 added: v6.3.0
@@ -3415,6 +3429,7 @@ the `crypto`, `tls`, and `https` modules and are generally specific to OpenSSL.
   </tr>
 </table>
 
+[`--experimental-secure-heap`]: cli.html#experimental_secure_heap
 [`Buffer`]: buffer.html
 [`EVP_BytesToKey`]: https://www.openssl.org/docs/man1.1.0/crypto/EVP_BytesToKey.html
 [`KeyObject`]: #crypto_class_keyobject

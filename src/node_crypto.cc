@@ -7086,6 +7086,34 @@ void ConvertKey(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(buf);
 }
 
+static void CryptoSecureFree(char* mem, void* hint) {
+  size_t size = CRYPTO_secure_actual_size(mem);
+  CHECK_NE(size, 0);
+  OPENSSL_secure_clear_free(mem, size);
+}
+
+static void CryptoSecureAlloc(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+
+  CHECK(args.Length() == 1 && args[0]->IsUint32());
+  uint32_t size;
+  if (!args[0]->Uint32Value(env->context()).To(&size))
+    return;
+
+  // Do not pretend that memory is secure if it is not.
+  if (!CRYPTO_secure_malloc_initialized())
+    return args.GetReturnValue().Set(false);
+
+  void* mem = OPENSSL_secure_zalloc(size);
+  CHECK_IMPLIES(size > 0, mem != nullptr);
+
+  // Note that CryptoSecureFree is called when the object is being gc'd meaning
+  // that the data will be in memory slightly longer than necessary.
+  MaybeLocal<Object> buffer = Buffer::New(env, static_cast<char*>(mem), size,
+                                          CryptoSecureFree, nullptr);
+
+  args.GetReturnValue().Set(buffer.ToLocalChecked());
+}
 
 void TimingSafeEqual(const FunctionCallbackInfo<Value>& args) {
   ArrayBufferViewContents<char> buf1(args[0]);
@@ -7211,6 +7239,8 @@ void Initialize(Local<Object> target,
   Hash::Initialize(env, target);
   Sign::Initialize(env, target);
   Verify::Initialize(env, target);
+
+  env->SetMethod(target, "alloc", CryptoSecureAlloc);
 
   env->SetMethodNoSideEffect(target, "certVerifySpkac", VerifySpkac);
   env->SetMethodNoSideEffect(target, "certExportPublicKey", ExportPublicKey);

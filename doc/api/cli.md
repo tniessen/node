@@ -216,7 +216,8 @@ added: REPLACEME
 -->
 
 Enable an experimental secure heap implementation. This option causes OpenSSL
-to store sensitive data such as private keys in a protected memory area.
+to store sensitive data such as private keys in a protected memory area and
+enables support for [`crypto.alloc()`][].
 
 Note that data stored in the secure heap is locked into memory. Most operating
 systems restrict the number of pages that can be locked into memory by a single
@@ -1360,6 +1361,7 @@ greater than `4` (its current default value). For more information, see the
 [`--openssl-config`]: #cli_openssl_config_file
 [`Buffer`]: buffer.html#buffer_class_buffer
 [`SlowBuffer`]: buffer.html#buffer_class_slowbuffer
+[`crypto.alloc()`]: crypto.html#crypto_alloc_size
 [`process.setUncaughtExceptionCaptureCallback()`]: process.html#process_process_setuncaughtexceptioncapturecallback_fn
 [`tls.DEFAULT_MAX_VERSION`]: tls.html#tls_tls_default_max_version
 [`tls.DEFAULT_MIN_VERSION`]: tls.html#tls_tls_default_min_version
