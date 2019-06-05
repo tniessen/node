@@ -24,6 +24,8 @@ namespace secure_heap {
 static void* AllocProtectedMemory(size_t size) {
   CHECK_NE(size, 0);
 
+  // TODO(tniessen): Add guard pages.
+
   // This employs several protection measures, but it isn't as secure as
   // OpenSSL's secure heap implementation. We are not using that because it
   // currently only supports a single, fixed-size heap, which isn't suited
