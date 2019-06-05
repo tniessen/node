@@ -186,7 +186,10 @@ BlockAddress FreeStack::Pop() {
   return address;
 }
 
-Block::Block(void* base_address, size_t exponent) : base_address(base_address), own_exponent(exponent) {
+Block::Block(void* base_address, size_t exponent, bool ephemeral)
+    : base_address(base_address),
+      own_exponent(exponent),
+      ephemeral(ephemeral) {
   CHECK_NOT_NULL(base_address);
   CHECK_GE(exponent, SECURE_HEAP_MIN_EXP);
   CHECK_LE(exponent, SECURE_HEAP_MAX_EXP);
@@ -236,7 +239,6 @@ static void* SecureHeap_malloc(size_t sz, const char* file, int line) {
 // TODO: If we add default behavior to OpenSSL, we won't need this function.
 static void* SecureHeap_zalloc(size_t sz, const char* file, int line) {
   REQUIRE_HEAP();
-  // TODO
   void* mem = per_process_secure_heap->Alloc(sz);
   if (mem != nullptr)
     memset(mem, 0, sz);
@@ -291,6 +293,10 @@ bool SecureHeap::ActivatePerProcess() {
                                               SecureHeap_used);
 }
 
+bool SecureHeap::CreateNonEphemeralBlock(size_t min_exponent) {
+  return CreateBlock(min_exponent, false);
+}
+
 void* SecureHeap::Alloc(size_t sz) {
   // We can safely return a nullptr since the returned pointer only needs to
   // be valid for sz bytes, which is zero in this case.
@@ -305,7 +311,7 @@ void* SecureHeap::Alloc(size_t sz) {
     // No block was able to cover the requested amount of memory. Create a new
     // block. If that succeeds, the next call to AllocExponent must succeed as
     // well.
-    if (CreateBlock(exponent) != nullptr) {
+    if (CreateBlock(exponent, true) != nullptr) {
       addr = AllocExponent(exponent);
       CHECK(addr);
     }
@@ -351,7 +357,8 @@ void SecureHeap::Free(void* ptr) {
 
   if (exponent == block->own_exponent) {
     // The whole block was free'd!
-    DestroyBlock(addr.block);
+    if (addr.block->ephemeral)
+      DestroyBlock(addr.block);
   } else {
     DCHECK_LT(exponent, block->own_exponent);
     // There is no buddy, or the buddy is still being used. Either way, we
@@ -453,7 +460,7 @@ Block* SecureHeap::CreateBlock(size_t min_exponent, bool ephemeral) {
 
   void* base_address = AllocProtectedMemory(1llu << block_exponent);
   if (base_address != nullptr) {
-    Block* block = new Block(base_address, block_exponent);
+    Block* block = new Block(base_address, block_exponent, ephemeral);
     if (block != nullptr) {
       BlockAddress base_block_addr(block, base_address);
       free_slices[block_exponent - SECURE_HEAP_MIN_EXP].Push(base_block_addr);
@@ -475,7 +482,20 @@ void SecureHeap::DestroyBlock(Block* block) {
 
 bool SecureHeap::Cleanup() {
   // This ensures that all allocations have been free'd.
-  return base_addresses.empty();
+  while (!base_addresses.empty()) {
+    for (const auto val : base_addresses) {
+      Block* block = val.second;
+      if (block->ephemeral)
+        return false;
+
+      BlockAddress base_block_addr(block, block->base_address);
+      if (!free_slices[block->own_exponent - SECURE_HEAP_MIN_EXP].Remove(base_block_addr))
+        return false;
+      DestroyBlock(block);
+    }
+  }
+
+  return true;
 }
 
 HeapInspector::HeapInspector(const SecureHeap& heap) : heap(heap) {}

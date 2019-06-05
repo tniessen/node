@@ -1002,6 +1002,13 @@ InitializationResult InitializeOncePerProcess(int argc, char** argv) {
 
   if (per_process::cli_options->experimental_secure_heap) {
     static SecureHeap heap;
+    if (!heap.CreateNonEphemeralBlock(15)) {
+      fprintf(stderr, "Secure heap initialization failed, please report this.");
+      result.exit_code = 1;
+      result.early_return = true;
+      return result;
+    }
+
     heap.ActivatePerProcess();
   }
 
