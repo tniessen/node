@@ -67,7 +67,7 @@ class FreeStack {
 class Block {
  public:
   // Creates a new block based on previously allocated memory.
-  Block(void* base_address, size_t exponent);
+  Block(void* base_address, size_t exponent, bool ephemeral);
 
   // Stores the size of an allocation within this block.
   void SetAllocationSize(void* ptr, size_t exponent);
@@ -86,6 +86,7 @@ class Block {
   void* base_address;
   size_t own_exponent;
   size_t* alloc_sizes;
+  bool ephemeral;
 
   friend class BlockAddress;
   friend class SecureHeap;
@@ -98,6 +99,8 @@ class SecureHeap {
 
   bool ActivatePerProcess();
 
+  bool CreateNonEphemeralBlock(size_t min_exponent);
+
   void* Alloc(size_t sz);
   void Free(void* ptr);
 
@@ -109,7 +112,7 @@ class SecureHeap {
  private:
   BlockAddress AllocExponent(size_t exponent);
 
-  Block* CreateBlock(size_t min_exponent);
+  Block* CreateBlock(size_t min_exponent, bool ephemeral);
   void DestroyBlock(Block* block);
 
   FreeStack free_slices[SECURE_HEAP_MAX_EXP - SECURE_HEAP_MIN_EXP + 1];
