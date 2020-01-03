@@ -7197,6 +7197,49 @@ void ConvertKey(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(buf);
 }
 
+AllocatedBuffer StatelessDiffieHellman(Environment* env, ManagedEVPPKey our_key,
+                                       ManagedEVPPKey their_key) {
+  size_t out_size;
+
+  EVPKeyCtxPointer ctx(EVP_PKEY_CTX_new(our_key.get(), nullptr));
+  if (!ctx ||
+      EVP_PKEY_derive_init(ctx.get()) <= 0 ||
+      EVP_PKEY_derive_set_peer(ctx.get(), their_key.get()) <= 0 ||
+      EVP_PKEY_derive(ctx.get(), nullptr, &out_size) <= 0)
+    return AllocatedBuffer();
+
+  AllocatedBuffer result = env->AllocateManaged(out_size);
+  CHECK_NOT_NULL(result.data());
+
+  unsigned char* data = reinterpret_cast<unsigned char*>(result.data());
+  if (EVP_PKEY_derive(ctx.get(), data, &out_size) <= 0)
+    return AllocatedBuffer();
+
+  CHECK_EQ(out_size, result.size());
+  return result;
+}
+
+void StatelessDiffieHellman(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+
+  CHECK(args[0]->IsObject() && args[1]->IsObject());
+  KeyObject* our_key_object;
+  ASSIGN_OR_RETURN_UNWRAP(&our_key_object, args[0].As<Object>());
+  CHECK_EQ(our_key_object->GetKeyType(), kKeyTypePrivate);
+  KeyObject* their_key_object;
+  ASSIGN_OR_RETURN_UNWRAP(&their_key_object, args[1].As<Object>());
+  CHECK_NE(their_key_object->GetKeyType(), kKeyTypeSecret);
+
+  ManagedEVPPKey our_key = our_key_object->GetAsymmetricKey();
+  ManagedEVPPKey their_key = their_key_object->GetAsymmetricKey();
+
+  AllocatedBuffer out = StatelessDiffieHellman(env, our_key, their_key);
+  if (out.size() == 0)
+    return ThrowCryptoError(env, ERR_get_error(), "diffieHellman failed");
+
+  args.GetReturnValue().Set(out.ToBuffer().ToLocalChecked());
+}
+
 
 void TimingSafeEqual(const FunctionCallbackInfo<Value>& args) {
   ArrayBufferViewContents<char> buf1(args[0]);
@@ -7366,6 +7409,7 @@ void Initialize(Local<Object> target,
   NODE_DEFINE_CONSTANT(target, kKeyTypePrivate);
   NODE_DEFINE_CONSTANT(target, kSigEncDER);
   NODE_DEFINE_CONSTANT(target, kSigEncP1363);
+  env->SetMethodNoSideEffect(target, "statelessDH", StatelessDiffieHellman);
   env->SetMethod(target, "randomBytes", RandomBytes);
   env->SetMethod(target, "signOneShot", SignOneShot);
   env->SetMethod(target, "verifyOneShot", VerifyOneShot);
