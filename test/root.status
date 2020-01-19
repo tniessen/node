@@ -20,6 +20,7 @@ parallel/test-cluster-bind-privileged-port: SLOW
 parallel/test-cluster-bind-twice: SLOW
 parallel/test-cluster-disconnect: SLOW
 parallel/test-cluster-disconnect-idle-worker: SLOW
+parallel/test-crypto-dh-stateless: SLOW
 parallel/test-crypto-fips: SLOW
 parallel/test-domain-abort-on-uncaught: SLOW
 parallel/test-domain-uncaught-exception: SLOW

@@ -7208,14 +7208,19 @@ AllocatedBuffer StatelessDiffieHellman(Environment* env, ManagedEVPPKey our_key,
       EVP_PKEY_derive(ctx.get(), nullptr, &out_size) <= 0)
     return AllocatedBuffer();
 
+  size_t first_out_size = out_size;
   AllocatedBuffer result = env->AllocateManaged(out_size);
   CHECK_NOT_NULL(result.data());
+  CHECK_EQ(first_out_size, result.size());
 
   unsigned char* data = reinterpret_cast<unsigned char*>(result.data());
   if (EVP_PKEY_derive(ctx.get(), data, &out_size) <= 0)
     return AllocatedBuffer();
 
-  CHECK_EQ(out_size, result.size());
+  if (out_size != result.size()) {
+    printf("first_out_size=%zu result.size=%zu out_size=%zu\n", first_out_size, result.size(), out_size);
+    CHECK_EQ(out_size, result.size());
+  }
   return result;
 }
 

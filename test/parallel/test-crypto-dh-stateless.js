@@ -149,6 +149,40 @@ for (const [params1, params2] of [
   });
 }
 
+{
+  const privateKey = crypto.createPrivateKey({
+    key: '-----BEGIN PRIVATE KEY-----\n' +
+         'MIIBoQIBADCB1QYJKoZIhvcNAQMBMIHHAoHBAP//////////yQ/aoiFowjTExmKL\n' +
+         'gNwc0SkCTgiKZ8x0Agu+pjsTmyJRSgh5jjQE3e+VGbPNOkMbMCsKbfJfFDdP4TVt\n' +
+         'bVHCReSFtXZiXn7G9ExC6aY37WsL/1y29Aa37e44a/taiZ+lrp8kEXxLH+ZJKGZR\n' +
+         '7ORbPcIAfLihY78FmNpINhxV05ppFj+o/STPX4NlXSPco62WHGLzViCFUrue1SkH\n' +
+         'cJaWbWcMNU5KvJgE8XRsCMojcyf//////////wIBAgSBwwKBwHu9fpiqrfJJ+tl9\n' +
+         'ujFtEWv4afub6A/1/7sgishOYN3YQ+nmWQlmPpveIY34an5dG82CTrixHwUzQTMF\n' +
+         'JaiCW3ax9+qk31f2jTNKrQznmKgopVKXF0FEJC6H79W/8Y0U14gsI9sHpovKhfou\n' +
+         'RQD0QogW7ejSwMG8hCYibfrvMm0b5PHlwimISyEKh7VtDQ1frYN/Wr9ZbiV+FePJ\n' +
+         '2j6RUKYNj1Pv+B4zdMgiLLjILAs8WUfbHciU21KSJh1izVQaUQ==\n' +
+         '-----END PRIVATE KEY-----'
+  });
+  const publicKey = crypto.createPublicKey({
+    key: '-----BEGIN PUBLIC KEY-----\n' +
+         'MIIBoDCB1QYJKoZIhvcNAQMBMIHHAoHBAP//////////yQ/aoiFowjTExmKLgNwc\n' +
+         '0SkCTgiKZ8x0Agu+pjsTmyJRSgh5jjQE3e+VGbPNOkMbMCsKbfJfFDdP4TVtbVHC\n' +
+         'ReSFtXZiXn7G9ExC6aY37WsL/1y29Aa37e44a/taiZ+lrp8kEXxLH+ZJKGZR7ORb\n' +
+         'PcIAfLihY78FmNpINhxV05ppFj+o/STPX4NlXSPco62WHGLzViCFUrue1SkHcJaW\n' +
+         'bWcMNU5KvJgE8XRsCMojcyf//////////wIBAgOBxQACgcEAmG9LpD8SAA6/W7oK\n' +
+         'E4MCuuQtf5E8bqtcEAfYTOOvKyCS+eiX3TtZRsvHJjUBEyeO99PR/KrGVlkSuW52\n' +
+         'ZOSXUOFu1L/0tqHrvRVHo+QEq3OvZ3EAyJkdtSEUTztxuUrMOyJXHDc1OUdNSnk0\n' +
+         'taGX4mP3247golVx2DS4viDYs7UtaMdx03dWaP6y5StNUZQlgCIUzL7MYpC16V5y\n' +
+         'KkFrE+Kp/Z77gEjivaG6YuxVj4GPLxJYbNFVTel42oSVeKuq\n' +
+         '-----END PUBLIC KEY-----',
+    format: 'pem'
+  });
+
+  // This key combination will result in an unusually short secret, and should
+  // not cause an assertion failure.
+  crypto.diffieHellman({ publicKey, privateKey });
+}
+
 // Test ECDH.
 
 test(crypto.generateKeyPairSync('ec', { namedCurve: 'secp256k1' }),
