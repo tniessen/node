@@ -369,12 +369,7 @@ Maybe<bool> ExportJWKRsaKey(
 
   // TODO(tniessen): Remove the "else" branch once we drop support for OpenSSL
   // versions older than 1.1.1e via FIPS / dynamic linking.
-  RSA* rsa;
-  if (OpenSSL_version_num() >= 0x1010105fL) {
-    rsa = EVP_PKEY_get0_RSA(pkey.get());
-  } else {
-    rsa = static_cast<RSA*>(EVP_PKEY_get0(pkey.get()));
-  }
+  RSA* rsa = static_cast<RSA*>(EVP_PKEY_get0(pkey.get()));
   CHECK_NOT_NULL(rsa);
 
   const BIGNUM* n;
