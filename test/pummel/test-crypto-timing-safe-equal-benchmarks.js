@@ -26,6 +26,13 @@ function runOneBenchmark(compareFunc, firstBufFill, secondBufFill, bufSize) {
     `);
 }
 
+function shuffle(a) {
+  for (let i = 1; i < a.length; i++) {
+    const j = crypto.randomInt(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+}
+
 function getTValue(compareFunc) {
   const numTrials = 1e5;
   const bufSize = 10000;
@@ -34,16 +41,18 @@ function getTValue(compareFunc) {
   const rawEqualBenches = Array(numTrials);
   const rawUnequalBenches = Array(numTrials);
 
+  const values = [['A', 'A'], ['B', 'B'], ['A', 'B'], ['B', 'A']];
+  assert.strictEqual(numTrials % values.length, 0);
+  const tests = [...Array(numTrials).keys()].map((i) => values[i % values.length]);
+  shuffle(tests);
+
   for (let i = 0; i < numTrials; i++) {
-    if (Math.random() < 0.5) {
-      // First benchmark: comparing two equal buffers
-      rawEqualBenches[i] = runOneBenchmark(compareFunc, 'A', 'A', bufSize);
-      // Second benchmark: comparing two unequal buffers
-      rawUnequalBenches[i] = runOneBenchmark(compareFunc, 'B', 'C', bufSize);
+    const [a, b] = tests[i];
+    const t = runOneBenchmark(compareFunc, a, b, bufSize);
+    if (a === b) {
+      rawEqualBenches[i] = t;
     } else {
-      // Flip the order of the benchmarks half of the time.
-      rawUnequalBenches[i] = runOneBenchmark(compareFunc, 'B', 'C', bufSize);
-      rawEqualBenches[i] = runOneBenchmark(compareFunc, 'A', 'A', bufSize);
+      rawUnequalBenches[i] = t;
     }
   }
 
