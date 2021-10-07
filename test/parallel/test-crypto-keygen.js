@@ -1682,3 +1682,24 @@ if (!common.hasOpenSSL3) {
     hashAlgorithm: 'sha1'
   }, common.mustNotCall()), { code: 'ERR_INVALID_ARG_VALUE' });
 }
+
+{
+  const { privateKey } = generateKeyPairSync('ec', {
+    namedCurve: 'SM2'
+  });
+
+  assert.strictEqual(privateKey.asymmetricKeyType, 'ec');
+
+  const exported = privateKey.export({
+    format: 'pem',
+    type: 'pkcs8'
+  });
+
+  const imported = createPrivateKey({
+    key: exported,
+    format: 'pem',
+    type: 'pkcs8'
+  });
+
+  assert.strictEqual(imported.asymmetricKeyType, 'ec');
+}
