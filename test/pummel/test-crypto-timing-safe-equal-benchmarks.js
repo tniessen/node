@@ -9,61 +9,60 @@ if (!common.enoughTestMem)
 const assert = require('assert');
 const crypto = require('crypto');
 
-function runOneBenchmark(compareFunc, firstBufFill, secondBufFill, bufSize) {
-  return eval(`
-      const firstBuffer = Buffer.alloc(bufSize, firstBufFill);
-      const secondBuffer = Buffer.alloc(bufSize, secondBufFill);
-
-      const startTime = process.hrtime();
-      const result = compareFunc(firstBuffer, secondBuffer);
-      const endTime = process.hrtime(startTime);
-
-      // Ensure that the result of the function call gets used, so it doesn't
-      // get discarded due to engine optimizations.
-      assert.strictEqual(result, firstBufFill === secondBufFill);
-
-      endTime[0] * 1e9 + endTime[1];
-    `);
-}
+const numTrials = 1e5;
+const bufSize = 16384;
+const readOnlyTestBuffer = crypto.randomBytes(bufSize);
 
 function getTValue(compareFunc) {
-  const numTrials = 1e5;
-  const bufSize = 10000;
   // Perform benchmarks to verify that timingSafeEqual is actually timing-safe.
 
-  const rawEqualBenches = Array(numTrials);
-  const rawUnequalBenches = Array(numTrials);
+  // Store all results in a single array and separate it later to avoid
+  // branching in the benchmark loop.
+  const measurements = Array(2 * numTrials).fill(0);
+  const testBuffer = Buffer.from(readOnlyTestBuffer);
 
-  for (let i = 0; i < numTrials; i++) {
-    if (Math.random() < 0.5) {
-      // First benchmark: comparing two equal buffers
-      rawEqualBenches[i] = runOneBenchmark(compareFunc, 'A', 'A', bufSize);
-      // Second benchmark: comparing two unequal buffers
-      rawUnequalBenches[i] = runOneBenchmark(compareFunc, 'B', 'C', bufSize);
-    } else {
-      // Flip the order of the benchmarks half of the time.
-      rawUnequalBenches[i] = runOneBenchmark(compareFunc, 'B', 'C', bufSize);
-      rawEqualBenches[i] = runOneBenchmark(compareFunc, 'A', 'A', bufSize);
-    }
+  // Run the actual benchmark. Avoid all branching (except the loop condition)
+  // to avoid conditional V8 optimizations.
+  let n = 0;
+  for (let i = 0; i < 2 * numTrials; i++) {
+    // Modify either the first or last byte of the copy of the test buffer.
+    const j = (bufSize - 1) * (i % 2);
+    testBuffer[j] ^= 1 | (i & 0xff);
+    // Call the comparison function and coerce the result into a number.
+    const startTime = process.hrtime.bigint();
+    n += compareFunc(testBuffer, readOnlyTestBuffer);
+    const endTime = process.hrtime.bigint();
+    measurements[i] = Number(endTime - startTime);
+    // Restore the original byte.
+    testBuffer[j] = readOnlyTestBuffer[j];
   }
 
-  const equalBenches = filterOutliers(rawEqualBenches);
-  const unequalBenches = filterOutliers(rawUnequalBenches);
+  // The comparison function should have returned false in every iteration, but
+  // we only check that here to avoid explicit branching above.
+  assert.strictEqual(n, 0);
+
+  // A simple comparison would be fast for even i and slow for odd i.
+  const rawFastBenches = measurements.filter((_, i) => i % 2 === 0);
+  const rawSlowBenches = measurements.filter((_, i) => i % 2 !== 0);
+  const fastBenches = filterOutliers(rawFastBenches);
+  const slowBenches = filterOutliers(rawSlowBenches);
 
   // Use a two-sample t-test to determine whether the timing difference between
   // the benchmarks is statistically significant.
   // https://wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test
 
-  const equalMean = mean(equalBenches);
-  const unequalMean = mean(unequalBenches);
+  const fastMean = mean(fastBenches);
+  const slowMean = mean(slowBenches);
 
-  const equalLen = equalBenches.length;
-  const unequalLen = unequalBenches.length;
+  const fastLen = fastBenches.length;
+  const slowLen = slowBenches.length;
 
-  const combinedStd = combinedStandardDeviation(equalBenches, unequalBenches);
-  const standardErr = combinedStd * Math.sqrt(1 / equalLen + 1 / unequalLen);
+  const combinedStd = combinedStandardDeviation(fastBenches, slowBenches);
+  const standardErr = combinedStd * Math.sqrt(1 / fastLen + 1 / slowLen);
 
-  return (equalMean - unequalMean) / standardErr;
+  console.log(JSON.stringify({ rawFastBenches, rawSlowBenches, fastMean, slowMean, t: (fastMean - slowMean) / standardErr }));
+
+  return (fastMean - slowMean) / standardErr;
 }
 
 // Returns the mean of an array
