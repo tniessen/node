@@ -23,55 +23,61 @@
 const common = require('../common');
 const assert = require('assert');
 const cluster = require('cluster');
+const fs = require('fs');
+
+function log(...args) {
+  console.log(new Date().toISOString(), `${process.pid}`.padStart(10), ...args);
+}
 
 if (cluster.isWorker) {
 
-  console.log('cluster.isWorker', { pid: process.pid });
+  log('cluster.isWorker', { pid: process.pid });
   // Keep the worker alive
   const http = require('http');
   http.Server().listen(0, '127.0.0.1');
+  setInterval(() => log('cluster.isWorker', 'still alive'), 500);
 
 } else if (process.argv[2] === 'cluster') {
 
-  console.log('cluster process', { pid: process.pid });
+  log('cluster process', { pid: process.pid });
   const worker = cluster.fork();
 
   // send PID info to testcase process
-  console.log('cluster process', { workerPid: worker.process.pid });
+  log('cluster process', { workerPid: worker.process.pid });
   process.send({
     pid: worker.process.pid
   });
 
   // Terminate the cluster process
   worker.once('listening', common.mustCall(() => {
-    console.log('cluster process', 'worker is listening');
+    log('cluster process', 'worker is listening');
     setTimeout(() => {
-      console.log('cluster process', 'process.exit(0)');
+      log('cluster process', 'process.exit(0)');
       process.exit(0);
     }, 1000);
   }));
 
 } else {
 
-  console.log('test process', { pid: process.pid});
+  log('test process', { pid: process.pid});
   // This is the testcase
   const fork = require('child_process').fork;
 
   // Spawn a cluster process
-  console.log('test process', 'spawn cluster', { script: process.argv[1] });
+  log('test process', 'spawn cluster', { script: process.argv[1] });
   const primary = fork(process.argv[1], ['cluster']);
 
   // get pid info
   let pid = null;
   primary.once('message', (data) => {
     pid = data.pid;
-    console.log('test process', 'message from primary', { pid });
+    log('test process', 'message from primary', { pid });
   });
 
   // When primary is dead
   let alive = true;
   primary.on('exit', common.mustCall((code) => {
-    console.log('test process', 'primary has exited', { code });
+    log('test process', 'primary has exited', { code });
 
     // Make sure that the primary died on purpose
     assert.strictEqual(code, 0);
@@ -79,8 +85,11 @@ if (cluster.isWorker) {
     // Check worker process status
     const pollWorker = () => {
       alive = common.isAlive(pid);
-      console.log('test process', 'pollWorker', { alive, pid });
+      log('test process', 'pollWorker', { alive, pid });
       if (alive) {
+        log('test process', 'pollWorker: alive', {
+          cmdline: fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0')
+        });
         setTimeout(pollWorker, 50);
       }
     };
@@ -89,7 +98,7 @@ if (cluster.isWorker) {
   }));
 
   process.once('exit', () => {
-    console.log('test process', 'exit', { pid, alive });
+    log('test process', 'exit', { pid, alive });
     assert.strictEqual(typeof pid, 'number',
                        `got ${pid} instead of a worker pid`);
     assert.strictEqual(alive, false,
