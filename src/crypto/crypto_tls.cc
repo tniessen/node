@@ -772,10 +772,14 @@ void TLSWrap::ClearOut() {
           if (UNLIKELY(!error->ToObject(context).ToLocal(&obj))) return;
 
           const char* ls = ERR_lib_error_string(ssl_err);
+#if OPENSSL_VERSION_MAJOR < 3
           const char* fs = ERR_func_error_string(ssl_err);
+#endif
           const char* rs = ERR_reason_error_string(ssl_err);
           if (!Set(env(), obj, env()->library_string(), ls) ||
+#if OPENSSL_VERSION_MAJOR < 3
               !Set(env(), obj, env()->function_string(), fs) ||
+#endif
               !Set(env(), obj, env()->reason_string(), rs, false)) return;
           // SSL has no API to recover the error name from the number, so we
           // transform reason strings like "this error" to "ERR_SSL_THIS_ERROR",

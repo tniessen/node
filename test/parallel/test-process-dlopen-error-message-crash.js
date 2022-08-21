@@ -4,7 +4,7 @@
 // unsanitized user input to a printf-like formatting function when dlopen
 // fails, potentially crashing the process.
 
-require('../common');
+const common = require('../common');
 const tmpdir = require('../common/tmpdir');
 tmpdir.refresh();
 
@@ -20,10 +20,20 @@ assert.throws(() => {
   message: /foo-%s\.node/
 });
 
-// This error message should also not be passed to a printf-like function.
-const notBindingPath = './test/addons/not-a-binding/build/Release/binding.node';
+const notBindingDir = 'test/addons/not-a-binding';
+const notBindingPath = `${notBindingDir}/build/Release/binding.node`;
 const strangeBindingPath = `${tmpdir.path}/binding-%s.node`;
-fs.copyFileSync(notBindingPath, strangeBindingPath);
+fs.accessSync(notBindingDir);
+try {
+  fs.copyFileSync(notBindingPath, strangeBindingPath);
+} catch (err) {
+  if (err.code !== 'ENOENT') throw err;
+  common.skip(`addon not found: ${notBindingPath}`);
+}
+
+console.log({ strangeBindingPath });
+
+// This error message should also not be passed to a printf-like function.
 assert.throws(() => {
   process.dlopen({ exports: {} }, strangeBindingPath);
 }, {
