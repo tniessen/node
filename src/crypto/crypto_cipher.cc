@@ -207,15 +207,8 @@ void CipherBase::GetCiphers(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
-CipherBase::CipherBase(Environment* env,
-                       Local<Object> wrap,
-                       CipherKind kind)
-    : BaseObject(env, wrap),
-      ctx_(nullptr),
-      kind_(kind),
-      auth_tag_state_(kAuthTagUnknown),
-      auth_tag_len_(kNoAuthTagLength),
-      pending_auth_failed_(false) {
+CipherBase::CipherBase(Environment* env, Local<Object> wrap, CipherKind kind)
+    : BaseObject(env, wrap), ctx_(nullptr), kind_(kind), auth_(std::nullopt) {
   MakeWeak();
 }
 
@@ -320,7 +313,7 @@ void CipherBase::New(const FunctionCallbackInfo<Value>& args) {
   if (!iv_buf.CheckSizeInt32()) [[unlikely]] {
     return THROW_ERR_OUT_OF_RANGE(env, "iv is too big");
   }
-  // Don't assign to cipher->auth_tag_len_ directly; the value might not
+  // Don't assign to cipher->auth_->tag_len_ directly; the value might not
   // represent a valid length at this point.
   unsigned int auth_tag_len;
   if (args[4]->IsUint32()) {
@@ -426,6 +419,7 @@ bool CipherBase::InitAuthenticated(const char* cipher_type,
                                    unsigned int auth_tag_len) {
   CHECK(IsAuthenticatedMode());
   MarkPopErrorOnReturn mark_pop_error_on_return;
+  auth_ = AuthState{};
 
   if (!ctx_.setIvLength(iv_len)) {
     THROW_ERR_CRYPTO_INVALID_IV(env());
@@ -443,7 +437,7 @@ bool CipherBase::InitAuthenticated(const char* cipher_type,
       }
 
       // Remember the given authentication tag length for later.
-      auth_tag_len_ = auth_tag_len;
+      auth_->tag_len_ = auth_tag_len;
     }
   } else {
     if (auth_tag_len == kNoAuthTagLength) {
@@ -476,7 +470,7 @@ bool CipherBase::InitAuthenticated(const char* cipher_type,
     }
 
     // Remember the given authentication tag length for later.
-    auth_tag_len_ = auth_tag_len;
+    auth_->tag_len_ = auth_tag_len;
 
     if (ctx_.isCcmMode()) {
       // Restrict the message length to min(INT_MAX, 2^(8*(15-iv_len))-1) bytes.
@@ -514,14 +508,13 @@ void CipherBase::GetAuthTag(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&cipher, args.This());
 
   // Only callable after Final and if encrypting.
-  if (cipher->ctx_ ||
-      cipher->kind_ != kCipher ||
-      cipher->auth_tag_len_ == kNoAuthTagLength) {
+  if (cipher->ctx_ || cipher->kind_ != kCipher || !cipher->auth_ ||
+      cipher->auth_->tag_len_ == kNoAuthTagLength) {
     return;
   }
 
   Local<Value> ret;
-  if (Buffer::Copy(env, cipher->auth_tag_, cipher->auth_tag_len_)
+  if (Buffer::Copy(env, cipher->auth_->tag_, cipher->auth_->tag_len_)
           .ToLocal(&ret)) {
     args.GetReturnValue().Set(ret);
   }
@@ -532,12 +525,12 @@ void CipherBase::SetAuthTag(const FunctionCallbackInfo<Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&cipher, args.This());
   Environment* env = Environment::GetCurrent(args);
 
-  if (!cipher->ctx_ ||
-      !cipher->IsAuthenticatedMode() ||
-      cipher->kind_ != kDecipher ||
-      cipher->auth_tag_state_ != kAuthTagUnknown) {
+  if (!cipher->ctx_ || cipher->kind_ != kDecipher || !cipher->auth_ ||
+      cipher->auth_->tag_state_ != kAuthTagUnknown) {
     return args.GetReturnValue().Set(false);
   }
+
+  CHECK(cipher->IsAuthenticatedMode());
 
   ArrayBufferOrViewContents<char> auth_tag(args[0]);
   if (!auth_tag.CheckSizeInt32()) [[unlikely]] {
@@ -548,15 +541,15 @@ void CipherBase::SetAuthTag(const FunctionCallbackInfo<Value>& args) {
   bool is_valid;
   if (cipher->ctx_.isGcmMode()) {
     // Restrict GCM tag lengths according to NIST 800-38d, page 9.
-    is_valid = (cipher->auth_tag_len_ == kNoAuthTagLength ||
-                cipher->auth_tag_len_ == tag_len) &&
+    is_valid = (cipher->auth_->tag_len_ == kNoAuthTagLength ||
+                cipher->auth_->tag_len_ == tag_len) &&
                Cipher::IsValidGCMTagLength(tag_len);
   } else {
     // At this point, the tag length is already known and must match the
     // length of the given authentication tag.
     CHECK(Cipher::FromCtx(cipher->ctx_).isSupportedAuthenticatedMode());
-    CHECK_NE(cipher->auth_tag_len_, kNoAuthTagLength);
-    is_valid = cipher->auth_tag_len_ == tag_len;
+    CHECK_NE(cipher->auth_->tag_len_, kNoAuthTagLength);
+    is_valid = cipher->auth_->tag_len_ == tag_len;
   }
 
   if (!is_valid) {
@@ -564,7 +557,7 @@ void CipherBase::SetAuthTag(const FunctionCallbackInfo<Value>& args) {
       env, "Invalid authentication tag length: %u", tag_len);
   }
 
-  if (cipher->ctx_.isGcmMode() && cipher->auth_tag_len_ == kNoAuthTagLength &&
+  if (cipher->ctx_.isGcmMode() && cipher->auth_->tag_len_ == kNoAuthTagLength &&
       tag_len != EVP_GCM_TLS_TAG_LEN && env->EmitProcessEnvWarning()) {
     if (ProcessEmitDeprecationWarning(
             env,
@@ -576,27 +569,42 @@ void CipherBase::SetAuthTag(const FunctionCallbackInfo<Value>& args) {
       return;
   }
 
-  cipher->auth_tag_len_ = tag_len;
-  cipher->auth_tag_state_ = kAuthTagKnown;
-  CHECK_LE(cipher->auth_tag_len_, sizeof(cipher->auth_tag_));
+  cipher->auth_->tag_len_ = tag_len;
+  cipher->auth_->tag_state_ = kAuthTagKnown;
+  CHECK_LE(cipher->auth_->tag_len_, sizeof(cipher->auth_->tag_));
 
-  memset(cipher->auth_tag_, 0, sizeof(cipher->auth_tag_));
-  auth_tag.CopyTo(cipher->auth_tag_, cipher->auth_tag_len_);
+  memset(cipher->auth_->tag_, 0, sizeof(cipher->auth_->tag_));
+  auth_tag.CopyTo(cipher->auth_->tag_, cipher->auth_->tag_len_);
+
+  {
+    if (cipher->auth_->tag_state_ == kAuthTagKnown) {
+      ncrypto::Buffer<const char> buffer{
+          .data = cipher->auth_->tag_,
+          .len = cipher->auth_->tag_len_,
+      };
+      if (!cipher->ctx_.setAeadTag(buffer)) {
+        args.GetReturnValue().Set(false);
+        return;
+      }
+      cipher->auth_->tag_state_ = kAuthTagPassedToOpenSSL;
+    }
+  }
 
   args.GetReturnValue().Set(true);
 }
 
 bool CipherBase::MaybePassAuthTagToOpenSSL() {
-  if (auth_tag_state_ == kAuthTagKnown) {
-    ncrypto::Buffer<const char> buffer{
-        .data = auth_tag_,
-        .len = auth_tag_len_,
-    };
-    if (!ctx_.setAeadTag(buffer)) {
-      return false;
-    }
-    auth_tag_state_ = kAuthTagPassedToOpenSSL;
-  }
+  // CHECK(auth_);
+  // if (auth_->tag_state_ == kAuthTagKnown) {
+  //   ncrypto::Buffer<const char> buffer{
+  //       .data = auth_->tag_,
+  //       .len = auth_->tag_len_,
+  //   };
+  //   if (!ctx_.setAeadTag(buffer)) {
+  //     return false;
+  //   }
+  //   auth_->tag_state_ = kAuthTagPassedToOpenSSL;
+  // }
   return true;
 }
 
@@ -715,7 +723,7 @@ CipherBase::UpdateResult CipherBase::Update(
   // When in CCM mode, EVP_CipherUpdate will fail if the authentication tag is
   // invalid. In that case, remember the error and throw in final().
   if (!r && kind_ == kDecipher && ctx_.isCcmMode()) {
-    pending_auth_failed_ = true;
+    auth_->pending_failure_ = true;
     return kSuccess;
   }
   return r == 1 ? kSuccess : kErrorState;
@@ -783,7 +791,7 @@ bool CipherBase::Final(std::unique_ptr<BackingStore>* out) {
   // OpenSSL v1.x doesn't verify the presence of the auth tag so do
   // it ourselves, see https://github.com/nodejs/node/issues/45874.
   if (kind_ == kDecipher && ctx_.isChaCha20Poly1305() &&
-      auth_tag_state_ != kAuthTagPassedToOpenSSL) {
+      auth_->tag_state_ != kAuthTagPassedToOpenSSL) {
     return false;
   }
 #endif
@@ -792,7 +800,7 @@ bool CipherBase::Final(std::unique_ptr<BackingStore>* out) {
   // EVP_CipherFinal_ex must not be called and will fail.
   bool ok;
   if (kind_ == kDecipher && ctx_.isCcmMode()) {
-    ok = !pending_auth_failed_;
+    ok = !auth_->pending_failure_;
     *out = ArrayBuffer::NewBackingStore(env()->isolate(), 0);
   } else {
     int out_len = (*out)->ByteLength();
@@ -812,12 +820,12 @@ bool CipherBase::Final(std::unique_ptr<BackingStore>* out) {
       // In GCM mode, the authentication tag length can be specified in advance,
       // but defaults to 16 bytes when encrypting. In CCM and OCB mode, it must
       // always be given by the user.
-      if (auth_tag_len_ == kNoAuthTagLength) {
+      if (auth_->tag_len_ == kNoAuthTagLength) {
         CHECK(ctx_.isGcmMode());
-        auth_tag_len_ = EVP_GCM_TLS_TAG_LEN;
+        auth_->tag_len_ = EVP_GCM_TLS_TAG_LEN;
       }
-      ok = ctx_.getAeadTag(auth_tag_len_,
-                           reinterpret_cast<unsigned char*>(auth_tag_));
+      ok = ctx_.getAeadTag(auth_->tag_len_,
+                           reinterpret_cast<unsigned char*>(auth_->tag_));
     }
   }
 

@@ -42,6 +42,12 @@ class CipherBase : public BaseObject {
     kAuthTagPassedToOpenSSL
   };
   static const unsigned kNoAuthTagLength = static_cast<unsigned>(-1);
+  struct AuthState {
+    AuthTagState tag_state_ = kAuthTagUnknown;
+    unsigned int tag_len_ = kNoAuthTagLength;
+    char tag_[ncrypto::Cipher::MAX_AUTH_TAG_LENGTH];
+    bool pending_failure_ = false;
+  };
 
   void CommonInit(const char* cipher_type,
                   const ncrypto::Cipher& cipher,
@@ -83,10 +89,7 @@ class CipherBase : public BaseObject {
  private:
   ncrypto::CipherCtxPointer ctx_;
   const CipherKind kind_;
-  AuthTagState auth_tag_state_;
-  unsigned int auth_tag_len_;
-  char auth_tag_[ncrypto::Cipher::MAX_AUTH_TAG_LENGTH];
-  bool pending_auth_failed_;
+  std::optional<AuthState> auth_;
   int max_message_size_;
 };
 
